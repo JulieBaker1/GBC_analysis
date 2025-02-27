@@ -2,38 +2,37 @@ library(Seurat)
 library(dplyr)
 library(patchwork)
 library(plotly)
-# library(SingleR)
+#library(SingleR)
 library(ggplot2)
-library(clusterProfiler)
-library(org.Hs.eg.db)
-library(enrichplot)
+#library(clusterProfiler) #
+#library(org.Hs.eg.db) #
+#library(enrichplot) #
 library(ggpubr)
 library(tidyverse)
-library(monocle) # Need R 4.0
-library(GSVA)
+#library(monocle) # Need R 4.0
+#library(GSVA) #
 library(fgsea)
 library(msigdbr)
 library(survminer)
 library(survival)
-library(ggplot2)
 library(ggrepel)
 library(corrplot)
-library(IOBR)
+#library(IOBR)
 library(circlize)
 library(RColorBrewer)
 library(GGally)
 library(data.table)
-library(ComplexHeatmap)
+#library(ComplexHeatmap) #
 library(dendextend)
 library(stringr)
 library(psych)
 library(reshape)
-library(jjPlot)
-library(gg.gap)
+#library(jjPlot)
+#library(gg.gap)
 library(gmodels)
 library(reshape2)
-library(ggradar)
-library(gmodels)
+##library(ggradar)
+library(pheatmap)
 
 # 1. Function ####
 get_adj_p <- function(data, .col, .grp = "Sample", comparisons = NULL,
@@ -83,12 +82,12 @@ get_adj_p <- function(data, .col, .grp = "Sample", comparisons = NULL,
 # ####
 
 # 2. Color ####
-mycolor <- readRDS("~/Desktop/Project/GBC/2 - Analysis_V3_checked/mycolor.RDS")
+mycolor <- readRDS("./mycolor.RDS")
 scales::show_col(mycolor)
 
 # * Summarize patient info. and related prognosis info. ####
 PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
-PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20240916预后更新.xlsx")
 PatientInfo = left_join(PatientInfo, PatientInfo_surv, "NewSample.ID")
 write_csv(PatientInfo, file = './1 - GBC_input data/GBC_SampleInfo_230719.csv')
 
@@ -96,6 +95,10 @@ write_csv(PatientInfo, file = './1 - GBC_input data/GBC_SampleInfo_230719.csv')
 ## 3-1. Neutrophil Subtype ####
 Myeloid_filtered_processed_F = readRDS("./1 - GBC_input data/Myeloid_filtered_processed_F.RDS")
 Myeloid_cell_Neu <- subset(Myeloid_filtered_processed_F, idents = "Neu")
+
+KRT_genes = sort(rownames(Myeloid_cell_Neu)[grep("^KRT",rownames(Myeloid_cell_Neu))])[1:53]
+Myeloid_cell_Neu = subset(Myeloid_cell_Neu, features = rownames(Myeloid_cell_Neu)[!(rownames(Myeloid_cell_Neu) %in% KRT_genes)])
+
 Myeloid_cell_Neu <- NormalizeData(Myeloid_cell_Neu, normalization.method = "LogNormalize", scale.factor = 10000)
 Myeloid_cell_Neu <- FindVariableFeatures(Myeloid_cell_Neu, selection.method = "vst", nfeatures = 2000)
 Myeloid_cell_Neu <- ScaleData(Myeloid_cell_Neu)
@@ -106,12 +109,15 @@ Myeloid_cell_Neu <- RunUMAP(Myeloid_cell_Neu, dims = 1:10)
 DimPlot(Myeloid_cell_Neu, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
 
 NeuSub.markers <- FindAllMarkers(Myeloid_cell_Neu, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.csv(NeuSub.markers, file = "./3 - GBC_output data_subtype/01_Neutrophil/DEGs among all neutrophil subtypes_v240422.csv")
+
 NeuSub.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
 DotPlot(Myeloid_cell_Neu, features = unique(top5$gene))  +
   # coord_flip() +
   theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5),legend.box = "vertical")+
   theme(axis.title.x = element_blank()) +
   theme(axis.title.y = element_blank())
+
 new.cluster.ids = c(
   "N_C0_MNDA", # 0
   "N_C1_ISG15", # 1
@@ -129,7 +135,31 @@ new.cluster.ids = c(
 names(new.cluster.ids) <- levels(Myeloid_cell_Neu)
 Myeloid_cell_Neu <- RenameIdents(Myeloid_cell_Neu, new.cluster.ids)
 DimPlot(Myeloid_cell_Neu, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
-saveRDS(Myeloid_cell_Neu, file = "./GBC_Myeloid_v3_output/Myeloid_cell_Neu.RDS")
+saveRDS(Myeloid_cell_Neu, file = "./3 - GBC_output data_subtype/Trials/GBC_Myeloid_v3_output/Myeloid_cell_Neu.RDS")
+
+### NG Appeal - to test per tumor ####
+Neu_Shanno = read.csv("./3 - GBC_output data_subtype/01_Neutrophil/Neu_Entropy.csv")
+ggplot(Neu_Shanno, aes(x=Cell.subtype, y=Entropy.value, fill = Cell.subtype)) + 
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#faae61","#faae61","#c9c6c3","#c9c6c3","#faae61",
+                               "#c9c6c3","#c9c6c3","#c9c6c3","#c9c6c3","#faae61",
+                               "#c9c6c3","#faae61")) +
+  geom_hline(aes(yintercept = 0.625), linetype = "dashed") +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5)) + NoLegend()
+
+Neu_H = subset(Myeloid_cell_Neu, idents = "N_C2_CCL3L1")
+temp = as.data.frame(sort((table(Neu_H$orig.ident)/length(Neu_H$orig.ident)),decreasing = T))
+temp$Freq = as.numeric(temp$Freq)
+ggplot(temp, aes(x=Var1, y=Freq)) + 
+  geom_bar(stat = "identity", fill = "#faae61") +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5)) + NoLegend()
+
+Neu_L = subset(Myeloid_cell_Neu, idents = "N_C11_MGP")
+temp = as.data.frame(sort((table(Neu_L$orig.ident)/length(Neu_L$orig.ident)),decreasing = T))
+temp$Freq = as.numeric(temp$Freq)
+ggplot(temp, aes(x=Var1, y=Freq)) + 
+  geom_bar(stat = "identity", fill = "#c9c6c3") +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5)) + NoLegend()
 
 ## 3-2. Monocyte/Macrophage Subtype ####
 Myeloid_filtered_processed_F = readRDS("./1 - GBC_input data/Myeloid_filtered_processed_F.RDS")
@@ -144,6 +174,8 @@ Myeloid_cell_MonoMacro <- RunUMAP(Myeloid_cell_MonoMacro, dims = 1:10)
 DimPlot(Myeloid_cell_MonoMacro, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
 
 MonoMacroSub.markers <- FindAllMarkers(Myeloid_cell_MonoMacro, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.csv(MonoMacroSub.markers, file = "./3 - GBC_output data_subtype/03_MM/DEGs among all mm subtypes_v240422.csv")
+
 MonoMacroSub.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
 DotPlot(Myeloid_cell_MonoMacro, features = unique(top5$gene))  +
   # coord_flip() +
@@ -163,7 +195,7 @@ new.cluster.ids = c(
 )
 names(new.cluster.ids) <- levels(Myeloid_cell_MonoMacro)
 Myeloid_cell_MonoMacro <- RenameIdents(Myeloid_cell_MonoMacro, new.cluster.ids)
-saveRDS(Myeloid_cell_MonoMacro, file = "./GBC_Myeloid_v3_output/Myeloid_cell_MonoMacro.RDS")
+saveRDS(Myeloid_cell_MonoMacro, file = "./3 - GBC_output data_subtype/Trials/GBC_Myeloid_v3_output/Myeloid_cell_MonoMacro.RDS")
 
 ## 3-3. DC Subtype ####
 Myeloid_filtered_processed_F = readRDS("./1 - GBC_input data/Myeloid_filtered_processed_F.RDS")
@@ -178,6 +210,8 @@ Myeloid_cell_DC <- RunUMAP(Myeloid_cell_DC, dims = 1:10)
 DimPlot(Myeloid_cell_DC, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
 
 DCSub.markers <- FindAllMarkers(Myeloid_cell_DC, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.csv(DCSub.markers, file = "./3 - GBC_output data_subtype/02_DC/DEGs among all DC subtypes_v240422.csv")
+
 DCSub.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
 DotPlot(Myeloid_cell_DC, features = unique(top5$gene))  +
   # coord_flip() +
@@ -185,18 +219,18 @@ DotPlot(Myeloid_cell_DC, features = unique(top5$gene))  +
   theme(axis.title.x = element_blank()) +
   theme(axis.title.y = element_blank())
 new.cluster.ids = c(
-  "DC_C0_cDC2_IL1B", # 0
-  "DC_C1_cDC2_others", # 1
-  "DC_C2_cDC3_FSCN1", # 2
-  "DC_C3_cDC2_FCGBP", # 3
-  "DC_C4_cDC2_PPP1R14A", # 4
-  "DC_C5_cDC1", # 5
-  "DC_C6_pDC", # 6
-  "DC_C7_cDC3_ACY3" # 7
+  "DC_C0_IL1B_cDC2", # 0
+  "DC_C1_others_cDC2", # 1
+  "DC_C2_FSCN1", # 2
+  "DC_C3_FCGBP", # 3
+  "DC_C4_PPP1R14A_cDC2", # 4
+  "DC_C5_CLEC9A_cDC1", # 5
+  "DC_C6_GZMB_pDC", # 6
+  "DC_C7_ACY3" # 7
 )
 names(new.cluster.ids) <- levels(Myeloid_cell_DC)
 Myeloid_cell_DC <- RenameIdents(Myeloid_cell_DC, new.cluster.ids)
-saveRDS(Myeloid_cell_DC, file = "./GBC_Myeloid_v3_output/Myeloid_cell_DC.RDS")
+saveRDS(Myeloid_cell_DC, file = "./3 - GBC_output data_subtype/Trials/GBC_Myeloid_v3_output/Myeloid_cell_DC.RDS")
 
 ## 3-4. Endothelial Cell Subtype ####
 Endothelial_RawData = readRDS("./1 - GBC_input data/Endothelial.RDS")
@@ -223,9 +257,9 @@ Endothelial_filtered <- NormalizeData(Endothelial_filtered, normalization.method
 Endothelial_filtered <- FindVariableFeatures(Endothelial_filtered, selection.method = "vst", nfeatures = 2000)
 Endothelial_filtered <- ScaleData(Endothelial_filtered)
 Endothelial_filtered <- RunPCA(Endothelial_filtered, features = VariableFeatures(object = Endothelial_filtered))
-Endothelial_filtered <- JackStraw(Endothelial_filtered, num.replicate = 100)
-Endothelial_filtered <- ScoreJackStraw(Endothelial_filtered, dims = 1:30)
-ElbowPlot(Endothelial_filtered)
+#Endothelial_filtered <- JackStraw(Endothelial_filtered, num.replicate = 100)
+#Endothelial_filtered <- ScoreJackStraw(Endothelial_filtered, dims = 1:30)
+#ElbowPlot(Endothelial_filtered)
 Endothelial_filtered <- FindNeighbors(Endothelial_filtered, dims = 1:20)
 Endothelial_filtered <- FindClusters(Endothelial_filtered, resolution = 0.3)
 Endothelial_filtered <- RunUMAP(Endothelial_filtered, dims = 1:20)
@@ -238,9 +272,9 @@ Endothelial_filtered <- NormalizeData(Endothelial_filtered, normalization.method
 Endothelial_filtered <- FindVariableFeatures(Endothelial_filtered, selection.method = "vst", nfeatures = 2000)
 Endothelial_filtered <- ScaleData(Endothelial_filtered)
 Endothelial_filtered <- RunPCA(Endothelial_filtered, features = VariableFeatures(object = Endothelial_filtered))
-Endothelial_filtered <- JackStraw(Endothelial_filtered, num.replicate = 100)
-Endothelial_filtered <- ScoreJackStraw(Endothelial_filtered, dims = 1:30)
-ElbowPlot(Endothelial_filtered)
+#Endothelial_filtered <- JackStraw(Endothelial_filtered, num.replicate = 100)
+#Endothelial_filtered <- ScoreJackStraw(Endothelial_filtered, dims = 1:30)
+#ElbowPlot(Endothelial_filtered)
 Endothelial_filtered <- FindNeighbors(Endothelial_filtered, dims = 1:20)
 Endothelial_filtered <- FindClusters(Endothelial_filtered, resolution = 0.3)
 Endothelial_filtered <- RunUMAP(Endothelial_filtered, dims = 1:20)
@@ -257,6 +291,8 @@ FeaturePlot(Endothelial_filtered, features = c('CXCR4', # common tip
 ))
 
 Endothelial_filtered_DEGs <- FindAllMarkers(Endothelial_filtered, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
+write.csv(Endothelial_filtered_DEGs, file = "./3 - GBC_output data_subtype/04_Endothelium/DEGs among all EC subtypes_v240422.csv")
+
 Endothelial_filtered_DEGs %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
 DotPlot(Endothelial_filtered, features = unique(top5$gene))  +
   #coord_flip() +
@@ -418,6 +454,7 @@ for (i in 1:length(cycle)) {
 Freq = as.data.frame(Freq)
 rownames(Freq) = cycle
 Freq[is.na(Freq)]=0 # Export to WYH
+saveRDS(Freq, file = './3 - GBC_output data_subtype/Myeloid_.RDS')
 Freq = Freq[,1:33]
 Freq_melt = Freq
 Freq_melt$Patient = rownames(Freq_melt)
@@ -624,7 +661,7 @@ Freq[is.na(Freq)]=0
 Freq = Freq[,1:29]
 Myeloid_Neu_Freq = Freq
 PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
-PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20240916预后更新.xlsx")
 PatientInfo_Neu = PatientInfo[PatientInfo$NewSample.ID %in% unique(rownames(Freq)),]
 PatientInfo_Neu = left_join(PatientInfo_Neu,PatientInfo_surv,by="NewSample.ID")
 Myeloid_Neu_Freq_surv = Myeloid_Neu_Freq
@@ -645,7 +682,7 @@ for (i in 1:length(cycle)) {
   p = ggsurvplot(
     fit,                     # survfit object with calculated statistics.
     data = temp,             # data used to fit survival curves.
-    #risk.table = TRUE,       # show risk table.
+    risk.table = TRUE,       # show risk table.
     pval = TRUE,             # show p-value of log-rank test.
     #conf.int = TRUE,         # show confidence intervals for
     palette = "npg",
@@ -665,7 +702,67 @@ for (i in 1:length(cycle)) {
     legend = "top",
     title = cycle[i]
   )
-  pdf(file = paste0("./3 - GBC_output data_subtype/09_MyeloidSubtype_Prognosis_AdenoP/", cycle[i], ".pdf"), width =2.5, height = 3, onefile = F)
+  pdf(file = paste0("./3 - GBC_output data_subtype/09_MyeloidSubtype_Prognosis_AdenoP/241218_", cycle[i], ".pdf"), width =6, height = 6, onefile = F)
+  print(p)
+  dev.off()
+}
+
+# 11. Prognosis of Endo subtypes in Adeno ####
+Myeloid_Subtype_counts = Myeloid_Endo_Subtype_counts[grep("EC_C", Myeloid_Endo_Subtype_counts$Subtype),]
+cycle = unique(Myeloid_Subtype_counts$orig.ident)
+Freq = c()
+for (i in 1:length(cycle)) {
+  sub = subset(Myeloid_Subtype_counts, orig.ident == cycle[i])
+  Freq = bind_rows(Freq, round((table(sub$Subtype)/nrow(sub))*100,2))
+}
+Freq = as.data.frame(Freq)
+rownames(Freq) = cycle
+Freq[is.na(Freq)]=0
+Freq = Freq[,30:38]
+Myeloid_Neu_Freq = Freq
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20240916预后更新.xlsx")
+PatientInfo_Neu = PatientInfo[PatientInfo$NewSample.ID %in% unique(rownames(Freq)),]
+PatientInfo_Neu = left_join(PatientInfo_Neu,PatientInfo_surv,by="NewSample.ID")
+Myeloid_Neu_Freq_surv = Myeloid_Neu_Freq
+Myeloid_Neu_Freq_surv$NewSample.ID = rownames(Myeloid_Neu_Freq_surv)
+PatientInfo_Neu = left_join(PatientInfo_Neu,Myeloid_Neu_Freq_surv,by="NewSample.ID")
+Surv_data_Neu = subset(PatientInfo_Neu, histological.type.short %in% "adeno")
+Surv_data_Neu = subset(Surv_data_Neu, Tumors.for.scRNA.seq.short %in% "P")
+Surv_data = Surv_data_Neu
+Surv_data = Surv_data[!is.na(Surv_data$event),]
+Surv_data$event01 = ifelse(Surv_data$event=="dead",1,0)
+Surv_data = subset(Surv_data, select = c("OS_month","event01",as.character(sort(unique(Myeloid_Subtype_counts$Subtype)))))
+cycle = as.character(sort(unique(Myeloid_Subtype_counts$Subtype)))
+for (i in 1:length(cycle)) {
+  temp = subset(Surv_data, select = c("OS_month","event01",cycle[i]))
+  temp[,3] = as.numeric(temp[,3])
+  temp[,3] = ifelse(temp[,3]>median(temp[,3]),"High","Low")
+  fit<-survfit(Surv(OS_month, event01)~temp[,3], data=temp)
+  p = ggsurvplot(
+    fit,                     # survfit object with calculated statistics.
+    data = temp,             # data used to fit survival curves.
+    risk.table = TRUE,       # show risk table.
+    pval = TRUE,             # show p-value of log-rank test.
+    #conf.int = TRUE,         # show confidence intervals for
+    palette = "npg",
+    xlab = "Time in months",   # customize X axis label.
+    #ggtheme = theme_bw(),
+    #conf.int.style = "step",  # customize style of confidence intervals  "ribbon" 'step'
+    #surv.median.line = "hv",  # add the median survival pointer.
+    # legend.labs = c("TP1", "TP2","TP3","TP4","TP5")    # change legend labels.
+    tables.y.text = T,
+    risk.table.pos = "in",
+    risk.table.col = "strata",
+    fontsize = 4,
+    pval.size = 4,
+    #surv.plot.height = 0.8,
+    #tables.height = 0.2,
+    pval.coord = c(9, 0.9),
+    legend = "top",
+    title = cycle[i]
+  )
+  pdf(file = paste0("./3 - GBC_output data_subtype/09_MyeloidSubtype_Prognosis_AdenoP/241218_", cycle[i], ".pdf"), width = 6, height = 6, onefile = F)
   print(p)
   dev.off()
 }
@@ -706,6 +803,18 @@ pdf(file = "./3 - GBC_output data_subtype/03_MM/MM_SubtypeDEGs_Top5.pdf", width 
 print(p)
 dev.off()
 
+Myeloid_cell_MonoMacro = subset(Myeloid_cell_MonoMacro, idents = c("M_C6_CCL18","M_C8_MMP9"), invert=T)
+Myeloid_cell_MonoMacro_DEGs_allpos <- FindAllMarkers(Myeloid_cell_MonoMacro, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
+Myeloid_cell_MonoMacro_DEGs_allpos = Myeloid_cell_MonoMacro_DEGs_allpos[Myeloid_cell_MonoMacro_DEGs_allpos$p_val_adj < 0.05,]
+write_csv(Myeloid_cell_MonoMacro_DEGs_allpos, file = "./3 - GBC_output data_subtype/03_MM/DEGs among common mm subtypes_v240422.csv")
+
+Myeloid_cell_MonoMacro_DEGs_allpos %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
+DotPlot(Myeloid_cell_MonoMacro, features = c(unique(top5$gene),"CD14","FCGR3A","CD68","CD163"))  +
+  #coord_flip() +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.title.y = element_blank())
+
 ## * Subset subgroups ####
 Myeloid_cell_MonoMacro = subset(Myeloid_cell_MonoMacro, idents = c("M_C7_AGR2"), invert=T)
 
@@ -724,6 +833,25 @@ Angio_TAM_Sig = list(c("ADAM8", "AREG", "BNIP3", "CCL2", "CCL4", "CCL20", "CD163
 Reg_TAM_Sig = list(c("CCL2", "CD274", "CD40", "CD80", "CD86", "CHIT1", "CX3CR1", "HLA-A", "HLA-C", "HLA-DQA1", "HLA-DQB1", "HLA-DRA", "HLA-DRB1", "HLA-DRB5", 
                      "ICOSLG", "IL-10", "ITGA4", "LGALS9", "MACRO", "MRC1", "TGFB2"))
 Prolif_TAM_Sig = list(c("CCNA2", "CDC45", "CDK1", "H2AFC", "HIST1H4C", "HMGB1", "HMGN2", "MKI67", "RRM2", "STMN1", "TOP2A", "TUBA1B", "TUBB", "TYMS"))
+
+IFN_TAM_Sig_genes = as.data.frame(unlist(IFN_TAM_Sig))
+write_csv(IFN_TAM_Sig_genes, file = "./3 - GBC_output data_subtype/03_MM/IFN_TAM_Sig_genes_v240422.csv")
+
+Inflam_TAM_Sig_genes = as.data.frame(unlist(Inflam_TAM_Sig))
+write_csv(Inflam_TAM_Sig_genes, file = "./3 - GBC_output data_subtype/03_MM/Inflam_TAM_Sig_genes_v240422.csv")
+
+LA_TAM_Sig_genes = as.data.frame(unlist(LA_TAM_Sig))
+write_csv(LA_TAM_Sig_genes, file = "./3 - GBC_output data_subtype/03_MM/LA_TAM_Sig_genes_v240422.csv")
+
+Angio_TAM_Sig_genes = as.data.frame(unlist(Angio_TAM_Sig))
+write_csv(Angio_TAM_Sig_genes, file = "./3 - GBC_output data_subtype/03_MM/Angio_TAM_Sig_genes_v240422.csv")
+
+Reg_TAM_Sig_genes = as.data.frame(unlist(Reg_TAM_Sig))
+write_csv(Reg_TAM_Sig_genes, file = "./3 - GBC_output data_subtype/03_MM/Reg_TAM_Sig_genes_v240422.csv")
+
+Prolif_TAM_Sig_genes = as.data.frame(unlist(Prolif_TAM_Sig))
+write_csv(Prolif_TAM_Sig_genes, file = "./3 - GBC_output data_subtype/03_MM/Prolif_TAM_Sig_genes_v240422.csv")
+
 Myeloid_cell_MonoMacro <- AddModuleScore(Myeloid_cell_MonoMacro, features = IFN_TAM_Sig, name = "IFN_TAM_Sig")
 Myeloid_cell_MonoMacro <- AddModuleScore(Myeloid_cell_MonoMacro, features = Inflam_TAM_Sig, name = "Inflam_TAM_Sig")
 Myeloid_cell_MonoMacro <- AddModuleScore(Myeloid_cell_MonoMacro, features = LA_TAM_Sig, name = "LA_TAM_Sig")
@@ -771,9 +899,9 @@ Myeloid_cell_MonoMacro@meta.data$Tumors.for.scRNA.seq.short = temp$Tumors.for.sc
 Myeloid_cell_MonoMacro@meta.data$metastasis.type = temp$metastasis.type
 Myeloid_cell_MonoMacro@meta.data$Clinical.stage = temp$Clinical.stage.x
 M1 = subset(Myeloid_cell_MonoMacro, idents = "M_C1_S100A8")
-M1 = subset(M1, histological.type.short == "adeno")
-M1 = subset(M1, Tumors.for.scRNA.seq.short %in% c("P","LN","LM"))
-M1$Group = M1$Tumors.for.scRNA.seq.short
+M1 = subset(M1, histological.type.short %in% c("adeno","CC","HG","LG","XGC"))
+M1 = subset(M1, Tumors.for.scRNA.seq.short %in% c("P","CC","XGC"))
+M1$Group = ifelse(M1$histological.type.short %in% c("adeno"), "Adeno", "Non-tumor")
 Idents(M1) = M1$Group
 ## DEGs: Volcano
 Endothelium_0_P_DEGs <- FindAllMarkers(M1, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
@@ -790,6 +918,9 @@ formula_res <- compareCluster(gene~cluster, data=Endothelium_0_P_DEGs,
                               ont = "BP" ,
                               pAdjustMethod = "BH",
                               readabl = TRUE)
+temp = formula_res@compareClusterResult
+write.csv(temp, file = "./3 - GBC_output data_subtype/03_MM/M1 GOBP_NTvsAdeno_v240422.csv")
+
 dotplot(formula_res, showCategory = 10) +
   #coord_flip() +
   theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5,size = 8),
@@ -798,6 +929,7 @@ dotplot(formula_res, showCategory = 10) +
         legend.direction = "vertical",
         legend.position = "right",
         legend.box = "horizontal")
+
 formula_res1 <- filter(formula_res, Description %in% c("positive regulation of cytokine production",
                                                        "antigen processing and presentation",
                                                        "response to hypoxia",
@@ -805,7 +937,7 @@ formula_res1 <- filter(formula_res, Description %in% c("positive regulation of c
                                                        "phagocytosis",
                                                        "regulation of inflammatory response",
                                                        "cell chemotaxis"))
-dotplot(formula_res, showCategory = 10) +
+dotplot(formula_res1, showCategory = 10) +
   #coord_flip() +
   theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5,size = 8),
         axis.text.y = element_text(size = 8),
@@ -840,13 +972,15 @@ print(p)
 dev.off()
 
 ## FigS4I ####
-MM = M1
+MM = M3
 MM$metastasis.type = ifelse(MM$metastasis.type %in% c("P_LM","P_LN"),"P_Met",MM$metastasis.type)
 MM$metastasis.type = ifelse(MM$metastasis.type %in% c("P_LI"),"P",MM$metastasis.type)
 Idents(MM) = MM$metastasis.type
 ## DEGs: Volcano
 MM_NTvsT_DEGs <- FindMarkers(MM,ident.1 = "P_Met", ident.2 = "P",only.pos = F,min.pct = 0.25, logfc.threshold = 0.25)
 MM_NTvsT_DEGs = MM_NTvsT_DEGs[MM_NTvsT_DEGs$p_val_adj < 0.05,]
+write.csv(MM_NTvsT_DEGs, file = "./3 - GBC_output data_subtype/03_MM/M3 PvsPMets_v240422.csv")
+
 Dat = MM_NTvsT_DEGs
 Dat$Gene = rownames(Dat)
 Dat$threshold = factor(ifelse(Dat$p_val_adj < 0.05 & abs(Dat$avg_log2FC) > 0, ifelse(Dat$avg_log2FC > 0 ,'Up','Down'),'NoSignifi'),levels=c('Up','Down','NoSignifi'))
@@ -1054,6 +1188,8 @@ saveRDS(Myeloid_cell_Neu, file = "./3 - GBC_output data_subtype/01_Neutrophil/My
 ## Fig2A ####
 Myeloid_cell_Neu_DEGs_allpos <- FindAllMarkers(Myeloid_cell_Neu, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
 Myeloid_cell_Neu_DEGs_allpos = Myeloid_cell_Neu_DEGs_allpos[Myeloid_cell_Neu_DEGs_allpos$p_val_adj < 0.05,]
+write.csv(Myeloid_cell_Neu_DEGs_allpos, file = "./3 - GBC_output data_subtype/01_Neutrophil/DEGs among common neutrophil subtypes_v240422.csv")
+
 Myeloid_cell_Neu_DEGs_allpos %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
 p = DotPlot(Myeloid_cell_Neu, features = top5$gene)  +
   # coord_flip() +
@@ -1074,6 +1210,16 @@ PBN_sig = Neu_sig[Neu_sig$Cell.cluster %in% c("Neu_02_S100A12","Neu_03_ISG15","N
 TAN_sig = list(TAN_sig)
 ALN_sig = list(ALN_sig)
 PBN_sig = list(PBN_sig)
+
+temp = as.data.frame(unlist(TAN_sig))
+write.csv(temp, file = "./3 - GBC_output data_subtype/01_Neutrophil/TAN_Sig_v240422.csv")
+
+temp = as.data.frame(unlist(ALN_sig))
+write.csv(temp, file = "./3 - GBC_output data_subtype/01_Neutrophil/ALN_sig_v240422.csv")
+
+temp = as.data.frame(unlist(PBN_sig))
+write.csv(temp, file = "./3 - GBC_output data_subtype/01_Neutrophil/PBN_sig_v240422.csv")
+
 Myeloid_cell_Neu <- AddModuleScore(Myeloid_cell_Neu, features = PBN_sig, name = "PBN_sig")
 Myeloid_cell_Neu <- AddModuleScore(Myeloid_cell_Neu, features = ALN_sig, name = "ALN_sig")
 Myeloid_cell_Neu <- AddModuleScore(Myeloid_cell_Neu, features = TAN_sig, name = "TAN_sig")
@@ -1826,7 +1972,7 @@ temp <- bitr(Endothelium_0_P_DEGs$gene,fromType = 'SYMBOL',
 Endothelium_0_P_DEGs = Endothelium_0_P_DEGs[temp$SYMBOL,]
 Endothelium_0_P_DEGs$gene = temp$ENTREZID
 Endothelium_0_P_DEGs = Endothelium_0_P_DEGs[Endothelium_0_P_DEGs$avg_log2FC > 0,]
-Endothelium_0_P_DEGs$cluster = "N1_UP"
+Endothelium_0_P_DEGs$cluster = "N7_UP"
 Endothelium_0_P_DEGs = rbind(Endothelium_0_P_DEGs,Endothelium_0_P_DEGs1)
 formula_res <- compareCluster(gene~cluster, data=Endothelium_0_P_DEGs,
                               fun="enrichGO",
@@ -1834,6 +1980,9 @@ formula_res <- compareCluster(gene~cluster, data=Endothelium_0_P_DEGs,
                               ont = "BP" ,
                               pAdjustMethod = "BH",
                               readabl = TRUE)
+temp = formula_res@compareClusterResult
+write.csv(temp, file = "./3 - GBC_output data_subtype/01_Neutrophil/N0N7up_NTvsAdeno_v240422.csv")
+
 formula_res1 <- filter(formula_res, Description %in% c("actin filament organization",
                                                        "regulation of apoptotic signaling pathway",
                                                        "cell chemotaxis",
@@ -1855,6 +2004,8 @@ dev.off()
 
 ## Fig2O ####
 temp = c("CYP4F3","SLC22A4","IL17A","MPO","F3","TNFRSF10C","CREB5","SELP","VNN3","MME","ENTPD4","G0S2","S100A12","BST1","CLEC6A","HPSE","FPR2","CEACAM3","IL8")
+write.csv(temp, file = "./3 - GBC_output data_subtype/01_Neutrophil/NET_sig_v240422.csv")
+
 temp = list(temp)
 Myeloid_cell_Neu <- AddModuleScore(Myeloid_cell_Neu, features = temp, name = "NET")
 p <- VlnPlot(Myeloid_cell_Neu,"NET1",pt.size = 0) +
@@ -1886,6 +2037,8 @@ Myeloid_cell_DC2 = subset(Myeloid_cell_DC, idents = c("DC_C0_cDC2_IL1B","DC_C1_c
 ## Fig3A ####
 Myeloid_cell_DC_DEGs_allpos <- FindAllMarkers(Myeloid_cell_DC, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
 Myeloid_cell_DC_DEGs_allpos = Myeloid_cell_DC_DEGs_allpos[Myeloid_cell_DC_DEGs_allpos$p_val_adj < 0.05,]
+write.csv(Myeloid_cell_DC_DEGs_allpos, file = "./3 - GBC_output data_subtype/02_DC/DEGs among common DC subtypes_v240422.csv")
+
 Myeloid_cell_DC_DEGs_allpos %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
 p = DotPlot(Myeloid_cell_DC, features = unique(top5$gene))  +
   # coord_flip() +
@@ -1908,6 +2061,9 @@ formula_res <- compareCluster(gene~cluster, data=Myeloid_cell_DC_DEGs_allpos,
                               ont = "BP" ,
                               pAdjustMethod = "BH",
                               readabl = TRUE)
+temp = formula_res@compareClusterResult
+write.csv(temp, file = "./3 - GBC_output data_subtype/02_DC/GOBP among common DC subtypes_v240422.csv")
+
 g = dotplot(formula_res, showCategory = 10) +
   #coord_flip() +
   theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5,size = 8),
@@ -2073,6 +2229,8 @@ Idents(Myeloid_cell_DC4) = Myeloid_cell_DC4@meta.data$histological.type.short
 ## DEGs: Volcano
 Myeloid_cell_DC_NTvsT_DEGs <- FindMarkers(Myeloid_cell_DC4, ident.1 = "Adeno", min.pct = 0.25, logfc.threshold = 0.25)
 Myeloid_cell_DC_NTvsT_DEGs = Myeloid_cell_DC_NTvsT_DEGs[Myeloid_cell_DC_NTvsT_DEGs$p_val_adj < 0.05,]
+write.csv(Myeloid_cell_DC_NTvsT_DEGs, file = "./3 - GBC_output data_subtype/02_DC/DEG DC4_NTvsAdeno_v240422.csv")
+
 Dat = Myeloid_cell_DC_NTvsT_DEGs
 Dat$Gene = rownames(Dat)
 Dat$threshold = factor(ifelse(Dat$p_val_adj < 0.05 & abs(Dat$avg_log2FC) > 0, ifelse(Dat$avg_log2FC > 0 ,'Up','Down'),'NoSignifi'),levels=c('Up','Down','NoSignifi'))
@@ -2205,6 +2363,8 @@ Endothelium = subset(Endothelium, idents = c("EC_C8_ACKR1_MT1X","EC_C7_FCN3"), i
 ## FigS7K ####
 Endothelium_DEGs_allpos <- FindAllMarkers(Endothelium, only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
 Endothelium_DEGs_allpos = Endothelium_DEGs_allpos[Endothelium_DEGs_allpos$p_val_adj < 0.05,]
+write.csv(Endothelium_DEGs_allpos, file = "./3 - GBC_output data_subtype/04_Endothelium/DEG among common EC subtype_v240422.csv")
+
 Endothelium_DEGs_allpos %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC) -> top5
 p = DotPlot(Endothelium, features = unique(top5$gene))  +
   #coord_flip() +
@@ -2238,14 +2398,17 @@ dotplot(formula_res, showCategory = 5) +
         legend.direction = "vertical",
         legend.position = "right",
         legend.box = "horizontal")
-formula_res <- filter(formula_res, Description %in% c("antigen processing and presentation",
+temp = formula_res@compareClusterResult
+write.csv(temp, file = "./3 - GBC_output data_subtype/04_Endothelium/GO among common EC subtype_v240422.csv")
+
+formula_res1 <- filter(formula_res, Description %in% c("antigen processing and presentation",
                                                       "receptor-mediated endocytosis", # EC5 top
                                                       "ATP metabolic process", # EC4/6 top
                                                       "oxidative phosphorylation",
                                                       "cell-substrate adhesion",
                                                       "regulation of angiogenesis",
                                                       "extracellular matrix organization"))
-p = dotplot(formula_res, showCategory = 5) +
+p = dotplot(formula_res1, showCategory = 5) +
   #coord_flip() +
   theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5,size = 10),
         axis.text.y = element_text(size = 10),
@@ -2358,6 +2521,9 @@ formula_res <- compareCluster(gene~cluster, data=Endothelium_P_DEGs,
                               ont = "BP" ,
                               pAdjustMethod = "BH",
                               readabl = TRUE)
+temp = formula_res@compareClusterResult
+write.csv(temp, file = "./3 - GBC_output data_subtype/04_Endothelium/EC0EC3_GO_NTvsAdeno_v240422.csv")
+
 dotplot(formula_res, showCategory = 10) +
   #coord_flip() +
   theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5,size = 8),
@@ -2457,12 +2623,17 @@ mycol = c("#51574a","#e9d78e",ggsci::pal_d3("category20")(20)[1:20])
 annotation = PatientInfo_metastasis
 annotation = subset(annotation, select= c("NewSample.ID","Clinical.stage","Group","Sex","Age","Polyps","Gallstones","PBM","Atrophic.cholecystitis",
                                           "Differentiation","liver.invasion","Bile.duct.invasion","Vascular.invasion","Lymph.node.metastasis","Liver.metastasis","Peritoneal..metastasis"))
-TMB_TotalMutation = read.csv(file = "./4 - Cooperation/WYH/WES/variants_number_patient.csv", row.names = 1)
+TMB_TotalMutation = read.csv(file = "../Publication/240923_Nature Genetics_Revise/4 - WYH/MutationMatrix_update_241106/wes_info_TMB-last col.csv", row.names = 1)
 colnames(TMB_TotalMutation)[1] = "NewSample.ID"
-TMB_TotalMutation = TMB_TotalMutation[,c(1:3)]
+TMB_TotalMutation = TMB_TotalMutation[,c(1,11)]
+TMB_TotalMutation$TMB = as.numeric(TMB_TotalMutation$TMB)
 annotation = left_join(annotation, TMB_TotalMutation, by = "NewSample.ID")
-Pop_Mutation = read.csv(file = "./4 - Cooperation/WYH/WES/onco_matrix_105_patient.csv", row.names = 1)
+Pop_Mutation = read.csv(file = "../Publication/240923_Nature Genetics_Revise/4 - WYH/MutationMatrix_update_241106/onco_matrix_105_patient.csv", row.names = 1)
 selected_Mutation = names(sort(apply(Pop_Mutation,1,function(x) length(grep("_",x))),decreasing = T)[1:20])
+
+# selected_Mutation = c("TP53","CDKN2A","ACOT12","E2F8","JUN","HRC","PRKCB","STK11","GBP3","ELF3","WWP1","VSTM2A","MAP3K8","ZNF322",
+#                       "AR","METTL7B","CD1A","XCL2","ZNF841","SOX15")
+
 Pop_Mutation = Pop_Mutation[selected_Mutation,]
 Pop_Mutation = as.data.frame(t(Pop_Mutation))
 Pop_Mutation = Pop_Mutation[rownames(Pop_Mutation) %in% annotation$NewSample.ID,]
@@ -2490,7 +2661,7 @@ annotation_col = list(Clinical.stage = c(I = "#b2f2a5",
                               F = mycol[12]),
                       
                       #total = colorRampPalette(c("white", "red"))(100),
-                      #total_perMB = colorRampPalette(c("white", "red"))(100),
+                      TMB = colorRampPalette(c("white", "purple"))(100),
                       
                       TP53 = c("Yes" = mycol[10],
                                  "No" = mycol[20]),
@@ -2560,7 +2731,7 @@ annotation_col = list(Clinical.stage = c(I = "#b2f2a5",
                                             "Moderate" = mycol[22],
                                             "Moderate & poor" = mycol[7],
                                             "Poor" = mycol[16]))
-bk <- c(seq(-0.5,0,by=0.01),seq(0,1,by=0.01))
+bk <- c(seq(-0.5,0,by=0.01),seq(0.01,1,by=0.01))
 p = pheatmap(Freq_adj,
          scale = "none",
          #cluster_rows = F,
@@ -2570,11 +2741,11 @@ p = pheatmap(Freq_adj,
          clustering_distance_rows="manhattan",
          clustering_method = "ward.D2",
          clustering_distance_cols="manhattan",
-         color = c(colorRampPalette(colors = c("#34ebc3","white","#eb346b"))(100)),
+         color = c(colorRampPalette(colors = c("#34ebc3","white","#eb346b"))(150)),
          legend_breaks = seq(-0.5,1,0.5),
          breaks = bk)
 # pdf(file = "./3 - GBC_output data_subtype/11_PatientClustering/PatientClustering.pdf", width =14, height = 7)
-pdf(file = "./3 - GBC_output data_subtype/11_PatientClustering/PatientClustering_anno.pdf", width =18, height = 15)
+pdf(file = "./3 - GBC_output data_subtype/11_PatientClustering/PatientClustering_anno_TMB-241123.pdf", width =18, height = 15)
 print(p)
 dev.off()
 
@@ -2585,89 +2756,253 @@ patient_group = cutree(hclust, h = 27.3, order_clusters_as_data = F)
 patient_group = data.frame(NewSample.ID = names(patient_group),
                            group = patient_group)
 saveRDS(patient_group, file = "./3 - GBC_output data_subtype/11_PatientClustering/patient_group_5MI.RDS")
-patient_group = patient_group[rownames(patient_group) %in% rownames(Pop_Mutation_MutHeatmap),]
-patient_group$group = paste0("MI",patient_group$group)
-patient_group = patient_group[rownames(Pop_Mutation_MutHeatmap),]
-patient_group = patient_group[order(patient_group$group),]
-ha = HeatmapAnnotation(group = patient_group$group,
-                       col = list(group = c("MI1" = "#915F19",
-                                          "MI2" = "#FF7F0E",
-                                          "MI3" = "#D754DE",
-                                          "MI4" = "#09A5ED",
-                                          "MI5" = "#34EBC3")))
 
-color_hp = c("#AA40FC","#D62728","#E377C2","#17BECF","#279E68","#AEC7E8")
+Pop_Mutation_MutHeatmap$NewSample.ID = rownames(Pop_Mutation_MutHeatmap)
+Pop_Mutation_MutHeatmap = left_join(patient_group, Pop_Mutation_MutHeatmap, by = "NewSample.ID")
+Pop_Mutation_MutHeatmap$group = paste0("MI",Pop_Mutation_MutHeatmap$group)
+Pop_Mutation_MutHeatmap[is.na(Pop_Mutation_MutHeatmap)] = ""
+
+
+# patient_order = arrange(Pop_Mutation_MutHeatmap,group,desc(TP53),desc(CDKN2A),desc(ACOT12),desc(E2F8),desc(JUN),desc(HRC),desc(PRKCB)
+#                         ,desc(STK11),desc(GBP3),desc(ELF3),desc(WWP1),desc(VSTM2A),desc(MAP3K8),desc(ZNF322),desc(AR),desc(METTL7B),
+#                         desc(CD1A),desc(XCL2),desc(ZNF841),desc(SOX15))
+
+patient_order = arrange(Pop_Mutation_MutHeatmap,group,desc(TP53))
+
+rownames(Pop_Mutation_MutHeatmap) = Pop_Mutation_MutHeatmap$NewSample.ID
+Pop_Mutation_MutHeatmap = Pop_Mutation_MutHeatmap[patient_order$NewSample.ID,]
+
+library("ComplexHeatmap")
+ha = HeatmapAnnotation(group = Pop_Mutation_MutHeatmap$group,
+                       col = list(group = c("MI1" = "#915F19",
+                                            "MI2" = "#FF7F0E",
+                                            "MI3" = "#D754DE",
+                                            "MI4" = "#09A5ED",
+                                            "MI5" = "#34EBC3")))
+
+color_hp = c("#AA40FC","#D62728","#E377C2","#17BECF","#279E68","#AEC7E8","#1F77B4","#FF7F0E")
 names(color_hp) = c("Nonsense_Mutation","Missense_Mutation","In_Frame_Del",
-                    "Multi_Hit","Frame_Shift_Ins","Frame_Shift_Del")
-Pop_Mutation_MutHeatmap = t(Pop_Mutation_MutHeatmap)
-Pop_Mutation_MutHeatmap_t = Pop_Mutation_MutHeatmap[,patient_group$NewSample.ID]
-identical(colnames(Pop_Mutation_MutHeatmap_t), patient_group$NewSample.ID)
-p = Heatmap(Pop_Mutation_MutHeatmap_t,
-        col = color_hp,
-        top_annotation = ha,
-        na_col = "white")
-pdf(file = "./3 - GBC_output data_subtype/12_Mutation_Pct_Cor/Mut_Heatmap.pdf", width =8, height = 5)
+                    "Multi_Hit","Frame_Shift_Ins","Frame_Shift_Del","In_Frame_Ins","Translation_Start_Site")
+
+Pop_Mutation_MutHeatmap_plot = Pop_Mutation_MutHeatmap[,c(3:22)]
+Pop_Mutation_MutHeatmap_plot = t(Pop_Mutation_MutHeatmap_plot)
+identical(colnames(Pop_Mutation_MutHeatmap_plot), Pop_Mutation_MutHeatmap$NewSample.ID)
+p = Heatmap(Pop_Mutation_MutHeatmap_plot,
+            col = color_hp,
+            top_annotation = ha,
+            na_col = "white")
+pdf(file = "./3 - GBC_output data_subtype/12_Mutation_Pct_Cor/Mut_Heatmap_New-241212.pdf", width =8, height = 5)
 print(p)
 dev.off()
+
+write.csv(Pop_Mutation_MutHeatmap_plot, file = "./3 - GBC_output data_subtype/12_Mutation_Pct_Cor/Mut_Heatmap_New-241123.csv")
 
 ## * calculate chi square ####
 annotation_test = annotation
 annotation_test$NewSample.ID = rownames(annotation_test)
 
-temp = subset(patient_group, select = c("NewSample.ID", "group1"))
+temp = subset(patient_group, select = c("NewSample.ID", "group"))
 annotation_test = left_join(annotation_test, temp, by = "NewSample.ID")
-annotation_test$group1 = paste0("MI",annotation_test$group1)
+annotation_test$group1 = annotation_test$group
 
+#### 75 patients
+library(gmodels)
 CrossTable(annotation_test$group1, annotation_test$Clinical.stage,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
 set.seed(202308)
-fisher.test(annotation_test$group1, annotation_test$Clinical.stage, simulate.p.value=TRUE)
+fisher.test(annotation_test$group1, annotation_test$Clinical.stage, simulate.p.value=TRUE) 
 
 CrossTable(annotation_test$group1, annotation_test$Group,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Group, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$Sex,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Sex, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$Age,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Age, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$Polyps,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Polyps, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$Gallstones,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Gallstones, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$PBM,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$PBM, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$Atrophic.cholecystitis,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Atrophic.cholecystitis, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$Differentiation,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
 set.seed(202308)
 fisher.test(annotation_test$group1, annotation_test$Differentiation, simulate.p.value=TRUE)
 
 CrossTable(annotation_test$group1, annotation_test$liver.invasion,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$Bile.duct.invasion,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$Vascular.invasion,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$Lymph.node.metastasis,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$Liver.metastasis,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$Peritoneal..metastasis,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$liver.invasion, simulate.p.value=TRUE)
 
-####
+CrossTable(annotation_test$group1, annotation_test$Bile.duct.invasion,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Bile.duct.invasion, simulate.p.value=TRUE)
+
+CrossTable(annotation_test$group1, annotation_test$Vascular.invasion,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Vascular.invasion, simulate.p.value=TRUE)
+
+CrossTable(annotation_test$group1, annotation_test$Lymph.node.metastasis,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Lymph.node.metastasis, simulate.p.value=TRUE)
+
+CrossTable(annotation_test$group1, annotation_test$Liver.metastasis,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$Liver.metastasis, simulate.p.value=TRUE)
+
+#### 75 patients
 CrossTable(annotation_test$group1, annotation_test$TP53,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$TP53, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$MUC5B,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$MUC5B, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$ARID1A,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$ARID1A, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$FLG,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$FLG, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$MUC16,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$MUC16, simulate.p.value=TRUE)
 
 CrossTable(annotation_test$group1, annotation_test$TTN,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$TTN, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$CDKN2A,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$MAGI1,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T) #
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$CDKN2A, simulate.p.value=TRUE)
+
+CrossTable(annotation_test$group1, annotation_test$MAGI1,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$MAGI1, simulate.p.value=TRUE)
+# annotation_df = subset(annotation_test, select = c("group","MAGI1"))
+# annotation_df$MAGI1[is.na(annotation_df$MAGI1)] = "No"
+# df_cell = annotation_df %>% group_by(group,MAGI1) %>% summarise(Value = n())
+# p = ggplot(data = df_cell, mapping = aes(x = factor(group), y = Value, fill = MAGI1)) +
+#   geom_bar(stat = 'identity', position = 'fill') +
+#   scale_fill_manual(values=c('grey','#3594f2')) + ggtitle("MAGI1 p-value = 0.04798") + theme_classic()
+# pdf(file = "./3 - GBC_output data_subtype/17_Mutation - MI_p/240408_MAGI1.pdf", width = 4, height = 3)
+# print(p)
+# dev.off()
+
 CrossTable(annotation_test$group1, annotation_test$PLEC,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$PLEC, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$MUC12,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$MUC12, simulate.p.value=TRUE)
 
 CrossTable(annotation_test$group1, annotation_test$TLE4,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$TLE4, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$DISP3,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$DISP3, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$CACNA1C,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$FAT2,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T) #
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$CACNA1C, simulate.p.value=TRUE)
+
+CrossTable(annotation_test$group1, annotation_test$FAT2,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$FAT2, simulate.p.value=TRUE)
+
+# annotation_df = subset(annotation_test, select = c("group","FAT2"))
+# annotation_df$FAT2[is.na(annotation_df$FAT2)] = "No"
+# df_cell = annotation_df %>% group_by(group,FAT2) %>% summarise(Value = n())
+# p = ggplot(data = df_cell, mapping = aes(x = factor(group), y = Value, fill = FAT2)) +
+#   geom_bar(stat = 'identity', position = 'fill') +
+#   scale_fill_manual(values=c('grey','#3594f2')) + ggtitle("FAT2 p-value = 0.02799") + theme_classic()
+# pdf(file = "./3 - GBC_output data_subtype/17_Mutation - MI_p/240408_FAT2.pdf", width = 4, height = 3)
+# print(p)
+# dev.off()
+
 CrossTable(annotation_test$group1, annotation_test$PRRC2B,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$PRRC2B, simulate.p.value=TRUE)
 
 CrossTable(annotation_test$group1, annotation_test$SYNE1,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
-CrossTable(annotation_test$group1, annotation_test$ACOT12,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T) #
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$SYNE1, simulate.p.value=TRUE)
+
+CrossTable(annotation_test$group1, annotation_test$ACOT12,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$ACOT12, simulate.p.value=TRUE)
+# annotation_df = subset(annotation_test, select = c("group","ACOT12"))
+# annotation_df$ACOT12[is.na(annotation_df$ACOT12)] = "No"
+# df_cell = annotation_df %>% group_by(group,ACOT12) %>% summarise(Value = n())
+# p = ggplot(data = df_cell, mapping = aes(x = factor(group), y = Value, fill = ACOT12)) +
+#   geom_bar(stat = 'identity', position = 'fill') +
+#   scale_fill_manual(values=c('grey','#3594f2')) + ggtitle("ACOT12 p-value = 0.03748") + theme_classic()
+# pdf(file = "./3 - GBC_output data_subtype/17_Mutation - MI_p/240408_ACOT12.pdf", width = 4, height = 3)
+# print(p)
+# dev.off()
+
 CrossTable(annotation_test$group1, annotation_test$AHNAK2,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$AHNAK2, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$E2F8,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$E2F8, simulate.p.value=TRUE)
+
 CrossTable(annotation_test$group1, annotation_test$FLG2,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+set.seed(202308)
+fisher.test(annotation_test$group1, annotation_test$FLG2, simulate.p.value=TRUE)
+
+
+# ##
+# annotation_test$M1 = ifelse(annotation_test$group1 == 1, "M1", "Others")
+# annotation_test$M2 = ifelse(annotation_test$group1 == 2, "M2", "Others")
+# annotation_test$M3 = ifelse(annotation_test$group1 == 3, "M3", "Others")
+# annotation_test$M4 = ifelse(annotation_test$group1 == 4, "M4", "Others")
+# annotation_test$M5 = ifelse(annotation_test$group1 == 5, "M5", "Others")
+# 
+# CrossTable(annotation_test$M1, annotation_test$TP53,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+# set.seed(202308)
+# fisher.test(annotation_test$M1, annotation_test$TP53, simulate.p.value=TRUE)
+# 
+# CrossTable(annotation_test$M2, annotation_test$TP53,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T) # p-value = 0.07644
+# set.seed(202308)
+# fisher.test(annotation_test$M2, annotation_test$TP53, simulate.p.value=TRUE)
+# 
+# CrossTable(annotation_test$M3, annotation_test$TP53,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+# set.seed(202308)
+# fisher.test(annotation_test$M3, annotation_test$TP53, simulate.p.value=TRUE)
+# 
+# CrossTable(annotation_test$M4, annotation_test$TP53,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+# set.seed(202308)
+# fisher.test(annotation_test$M4, annotation_test$TP53, simulate.p.value=TRUE)
+# 
+# CrossTable(annotation_test$M5, annotation_test$TP53,fisher=T,chisq =T,format="SPSS",expected=T,prop.c = T,prop.t = T,prop.chisq = T)
+# set.seed(202308)
+# fisher.test(annotation_test$M5, annotation_test$TP53, simulate.p.value=TRUE)
 
 ####
-compare_means(total~group1, annotation_test, method = "anova")
-compare_means(total_perMB~group1, annotation_test, method = "anova")
+compare_means(TMB~group1, annotation_test, method = "anova") # NS
+# compare_means(total_perMB~group1, annotation_test, method = "anova")
 
 ####
 Freq = Freq[,subtype]
@@ -2696,6 +3031,134 @@ for (i in 1:20) {
     }
   }
 }
+
+#### summary for Mut-Pct ####
+GBC_AllSubtype <- read.csv("./4 - Cooperation/WYH/All Subtype Info/celltype_info_all_filter_final.csv")
+GBC_TIMESubtype = GBC_AllSubtype[!(GBC_AllSubtype$celltype %in% c("tumor","normal")),]
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_DC = PatientInfo[PatientInfo$X %in% unique(GBC_TIMESubtype$orig.ident),]
+PatientInfo_metastasis = PatientInfo_DC[PatientInfo_DC$histological.type.short %in% c("adeno"),]
+PatientInfo_metastasis = PatientInfo_metastasis[PatientInfo_metastasis$Tumors.for.scRNA.seq.short %in% c("P"),]
+PatientInfo_metastasis$Group = PatientInfo_metastasis$metastasis.type
+PatientInfo_metastasis$Group = ifelse(PatientInfo_metastasis$Group == "P_LI", "P", PatientInfo_metastasis$Group)
+PatientInfo_metastasis$Group = ifelse(PatientInfo_metastasis$Group %in% c("P_LN","P_LM"), "P_Mets", PatientInfo_metastasis$Group)
+Select_Patient = PatientInfo_metastasis$NewSample.ID
+cycle = Select_Patient
+Freq = c()
+for (i in 1:length(cycle)) {
+  sub = subset(GBC_TIMESubtype, orig.ident == cycle[i])
+  Freq = bind_rows(Freq, round(table(sub$subtype)/nrow(sub),4))
+}
+Freq = as.data.frame(Freq)
+rownames(Freq) = cycle
+Freq[is.na(Freq)]=0
+
+Pop_Mutation = read.csv(file = "../Publication/240923_Nature Genetics_Revise/4 - WYH/MutationMatrix_update_241106/onco_matrix_105_patient.csv", row.names = 1)
+
+selected_Mutation = names(sort(apply(Pop_Mutation,1,function(x) length(grep("_",x))),decreasing = T)[1:20])
+# selected_Mutation = c("TP53","CDKN2A","ACOT12","E2F8","JUN","HRC","PRKCB","STK11","GBP3","ELF3","WWP1","VSTM2A","MAP3K8","ZNF322",
+#                       "AR","METTL7B","CD1A","XCL2","ZNF841","SOX15")
+
+Pop_Mutation = Pop_Mutation[selected_Mutation,]
+Pop_Mutation = as.data.frame(t(Pop_Mutation))
+Pop_Mutation = Pop_Mutation[rownames(Pop_Mutation) %in% Select_Patient,]
+Pop_Mutation = apply(Pop_Mutation, 2, function(x) ifelse(is.na(x),"No",ifelse(x=="","No","Yes")))
+Pop_Mutation = as.data.frame(Pop_Mutation)
+
+yes_count <- apply(Pop_Mutation, 2, function(x) sum(x == "Yes"))
+selected_Mutation <- names(yes_count[yes_count >= 3])
+
+subtype = c("CD4T_C1_FOXP3",
+            "CD4T_C7_ISG15",
+            #"CD4T_C8_MKI67",
+            "CD8T_C1_CXCL13",
+            #"CD8T_C8_MKI67",
+            #"CD8T_C11_PCLAF",
+            "γdT_C12_TRDC",
+            "NKT_C3_CAPG",
+            #"NK_C6_MKI67",
+            "F_C0_MMP11",
+            "Per_C0_RGS5",
+            "DC_C0_cDC2_IL1B",
+            "DC_C2_cDC3_FSCN1",
+            "DC_C5_cDC1",
+            "DC_C6_pDC",
+            "M_C2_SPP1",
+            "M_C7_AGR2",
+            "N_C9_Nc",
+            "EC_C2_CXCR4",
+            "CD4T_C2_CCR7",
+            #"CD4T_C4_Unassign",
+            "CD8T_C0_CCR7_GZMK",
+            "B_C0_IGHA1",
+            "F_C1_CFD",
+            "Per_C1_MYH11",
+            "DC_C4_cDC2_PPP1R14A",
+            #"M_C4_others",
+            "N_C0_N0",
+            "N_C1_N2",
+            "N_C2_N1",
+            "N_C7_N0",
+            "EC_C3_GJA5",
+            "EC_C5_PROX1",
+            "Per_C3_STEAP4",
+            "M_C1_S100A8",
+            "CD8T_C9_MT1X_MT1E",
+            "EC_C0_ACKR1")
+
+cell.ct = Freq[,subtype]
+cell.ct = cell.ct[Select_Patient,]
+cell.ct$PatientID = rownames(cell.ct)
+Pop_Mutation$PatientID = rownames(Pop_Mutation)
+cell.ct = left_join(cell.ct, Pop_Mutation, by = "PatientID")
+cell.ct[is.na(cell.ct)] = "No"
+
+df = data.frame()
+final.df = data.frame()
+for (i in 1:length(selected_Mutation)){
+  cycle.ct = cell.ct[,c(subtype, selected_Mutation[i])]
+  colnames(cycle.ct)[ncol(cycle.ct)] = "group"
+  
+  for (j in 1:31){
+    test_result <- compare_means(as.formula(paste(subtype[j], "~ group")), data = cycle.ct, method = 'wilcox.test', ref.group = "No")
+    p_value = test_result$p
+    
+    mean_yes = mean(cycle.ct[cycle.ct$group == "Yes",j])
+    mean_no = mean(cycle.ct[cycle.ct$group == "No",j])
+    
+    df[j,1] = selected_Mutation[i]
+    df[j,2] = subtype[j]
+    df[j,3] = p_value
+    df[j,4] = ifelse(mean_yes > mean_no, "Up", "Down")
+  }
+  
+  final.df = rbind(final.df,df)
+  df = data.frame()
+  
+}
+
+colnames(final.df) = c('Mutation','Subtype','P','Sig')
+final.df$Sig = ifelse(final.df$P < 0.05, final.df$Sig, "NS")
+final.df$Sig = factor(final.df$Sig, levels = c("Up", "Down", "NS"))
+final.df$p_value_log <- -log10(final.df$P)
+
+final.df$Mutation <- factor(final.df$Mutation, levels = names(sort(yes_count)))
+
+p = ggplot(final.df, aes(x = Subtype, y = Mutation, size = p_value_log)) +
+  geom_point(aes(color = Sig), alpha = 0.7) +  # 添加气泡
+  scale_size_continuous(range = c(1, 10)) +  # 设置气泡大小范围
+  labs(title = "MI-specific subtypes") +  # 添加标题和标签
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.3),
+        legend.box = "vertical")
+
+pdf(file = "./3 - GBC_output data_subtype/12_Mutation_Pct_Cor/Mut_Pct_Heatmap_New-241212.pdf", width =12, height = 4.5)
+print(p)
+dev.off()
+
+
+write.csv(final.df, file = "./3 - GBC_output data_subtype/12_Mutation_Pct_Cor/Mut_Pct_Heatmap_New-241126.csv")
+
 
 ## * add GM annotation for each patient ####
 GM_percentage = read.csv("./4 - Cooperation/WYH/GM_patient_ratio.csv")
@@ -2944,7 +3407,7 @@ plot(color_branches(hclust,h=27.3,groupLabels = T))
 patient_group = cutree(hclust, h = 27.3, order_clusters_as_data = F)
 patient_group = data.frame(NewSample.ID = names(patient_group),
                            group = patient_group)
-PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20240916预后更新.xlsx")
 PatientInfo_surv = subset(PatientInfo_surv, NewSample.ID %in% patient_group$NewSample.ID)
 patient_group = left_join(patient_group,PatientInfo_surv,by="NewSample.ID")
 patient_group$event[is.na(patient_group$event)] = 0
@@ -2953,23 +3416,37 @@ patient_group = left_join(patient_group,PatientInfo_DC,by="NewSample.ID")
 PatientInfo_metastasis = patient_group[patient_group$histological.type.short %in% c("adeno"),]
 patient_group = PatientInfo_metastasis[PatientInfo_metastasis$Tumors.for.scRNA.seq.short %in% c("P"),]
 patient_group$group1 = patient_group$group
-patient_group$group = ifelse(patient_group$group1 ==3,3,"others")
+patient_group$group = ifelse(patient_group$group1 ==5,"MI5","other MIs")
+
+c("MI1" = "#915F19",
+  "MI2" = "#FF7F0E",
+  "MI3" = "#D754DE",
+  "MI4" = "#09A5ED",
+  "MI5" = "#34EBC3")
+
 fit<-survfit(Surv(OS_month, event01)~group, data=patient_group)
 g=ggsurvplot(
   fit,                     # survfit object with calculated statistics.
   data = patient_group,             # data used to fit survival curves.
-  palette = c("#34ebc3","#bbbcbd"),
-  #risk.table = TRUE,       # show risk table.
+  palette = c("#34EBC3","grey"),
+  risk.table = TRUE,       # show risk table.
   pval = TRUE,             # show p-value of log-rank test.
   #conf.int = TRUE,         # show confidence intervals for
   # palette = "npg",
-  xlab = "Time in days",   # customize X axis label.
-  ggtheme = theme_classic(),
+  xlab = "Time in months",   # customize X axis label.
+  risk.table.pos = "in",
+  risk.table.col = "strata",
+  fontsize = 4,
+  pval.size = 4,
+  pval.coord = c(9, 0.9),
+  legend = "top",
+  title = "MI5"
+  #ggtheme = theme_classic(),
   #conf.int.style = "step",  # customize style of confidence intervals  "ribbon" 'step'
   #surv.median.line = "hv",  # add the median survival pointer.
   # legend.labs = c("TP1", "TP2","TP3","TP4","TP5")    # change legend labels.
 )
-pdf(file = "./3 - GBC_output data_subtype/11_PatientClustering/Prognosis_5_16H59L.pdf", width =3, height = 3, onefile = F)
+pdf(file = "./3 - GBC_output data_subtype/11_PatientClustering/New241218_Prognosis_MI5.pdf", width =6, height = 6, onefile = F)
 print(g)
 dev.off()
 
@@ -3091,7 +3568,767 @@ pdf(file = "./3 - GBC_output data_subtype/11_PatientClustering/Validate_Surv_MI2
 print(g)
 dev.off()
 
+# More analysis ####
+## External dataset - prognosis ####
+library(DESeq2)
+cts <- read.table("./GBC_external RNA-seq/gene_counts.txt", header = T)
+dt <- openxlsx::read.xlsx("./GBC_external RNA-seq/NC_gbc_survival_GBCKorea 20210618.xlsx")
+
+# 删除重复基因
+all_genes <- cts$Gene
+dups <- unique(all_genes[duplicated(all_genes)])
+cts <- cts[!all_genes %in% dups,]
+rownames(cts) <- cts[,1]
+cts <- cts[,-1]
+cts <- as.data.frame(cts)
+
+# 转换为数字格式
+for (i in 1:dim(cts)[2]) {
+  cts[,i] <- as.numeric(cts[,i])
+}
+
+# 过滤表达为0的
+cts <- cts[rowMeans(cts)>1,]
+
+# tpm转换
+tpm <- count2tpm(countMat = cts, idType = "Symbol", org="hsa")
+tpm <- tpm[,colnames(tpm) %in% dt$Patient_Id]
+tpm <- as.matrix(tpm)
+
+# 分组预后
+dt = dt[dt$Patient_Id %in% colnames(tpm),]
+tpm = t(tpm)
+tpm = tpm[,c("AREG","CXCL5")]
+tpm = as.data.frame(tpm)
+tpm$Patient_Id = rownames(tpm)
+dt = left_join(dt,tpm,by="Patient_Id")
+
+dt$AREG_group = ifelse(dt$AREG > median(dt$AREG), "High_AREG", "Low_AREG")
+dt$vital_status = ifelse(dt$vital_status == "dead", 1, 0)
+fit<-survfit(Surv(months_to_last_fu, vital_status)~AREG_group, data=dt)
+ggsurvplot(
+  fit,                     # survfit object with calculated statistics.
+  data = dt,             # data used to fit survival curves.
+  palette = c("#ff7f0e","#bbbcbd"),
+  #risk.table = TRUE,       # show risk table.
+  pval = TRUE,             # show p-value of log-rank test.
+  #conf.int = TRUE,         # show confidence intervals for
+  # palette = "npg",
+  xlab = "Time in months",   # customize X axis label.
+  ggtheme = theme_classic(),
+  #conf.int.style = "step",  # customize style of confidence intervals  "ribbon" 'step'
+  #surv.median.line = "hv",  # add the median survival pointer.
+  # legend.labs = c("TP1", "TP2","TP3","TP4","TP5")    # change legend labels.
+)
+
+dt$CXCL5_group = ifelse(dt$CXCL5 > median(dt$CXCL5), "High_CXCL5", "Low_CXCL5")
+fit<-survfit(Surv(months_to_last_fu, vital_status)~CXCL5_group, data=dt)
+ggsurvplot(
+  fit,                     # survfit object with calculated statistics.
+  data = dt,             # data used to fit survival curves.
+  palette = c("#ff7f0e","#bbbcbd"),
+  #risk.table = TRUE,       # show risk table.
+  pval = TRUE,             # show p-value of log-rank test.
+  #conf.int = TRUE,         # show confidence intervals for
+  # palette = "npg",
+  xlab = "Time in months",   # customize X axis label.
+  ggtheme = theme_classic(),
+  #conf.int.style = "step",  # customize style of confidence intervals  "ribbon" 'step'
+  #surv.median.line = "hv",  # add the median survival pointer.
+  # legend.labs = c("TP1", "TP2","TP3","TP4","TP5")    # change legend labels.
+)
+
+## ####
+
+## Progression - S100A8+ Ma AREG ####
+Myeloid_cell_MonoMacro <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/03_MM/Myeloid_cell_MonoMacro.RDS")
+
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo = PatientInfo[PatientInfo$NewSample.ID %in% unique(Myeloid_cell_MonoMacro@meta.data$orig.ident),]
+PatientInfo = left_join(PatientInfo,PatientInfo_surv,by="NewSample.ID")
+Myeloid_cell_MonoMacro@meta.data$NewSample.ID = Myeloid_cell_MonoMacro@meta.data$orig.ident
+temp = left_join(Myeloid_cell_MonoMacro@meta.data, PatientInfo, by = "NewSample.ID")
+identical(Myeloid_cell_MonoMacro@meta.data$orig.ident, temp$orig.ident)
+Myeloid_cell_MonoMacro@meta.data$histological.type.short = temp$histological.type.short
+Myeloid_cell_MonoMacro@meta.data$Tumors.for.scRNA.seq.short = temp$Tumors.for.scRNA.seq.short
+Myeloid_cell_MonoMacro@meta.data$metastasis.type = temp$metastasis.type
+Myeloid_cell_MonoMacro@meta.data$Clinical.stage = temp$Clinical.stage.x
+M1 = subset(Myeloid_cell_MonoMacro, idents = "M_C1_S100A8")
+
+expr = M1
+df = FetchData(expr,vars = c('AREG','Clinical.stage','orig.ident','metastasis.type','Tumors.for.scRNA.seq.short','histological.type.short'))
+df = df[df$histological.type.short %in% c("adeno"),]
+df = df[df$Tumors.for.scRNA.seq.short %in% c("P"),]
+df$Clinical.stage = ifelse(df$Clinical.stage %in% c('IIA','IIB'),'II',df$Clinical.stage)
+
+df_M1 = df
+
+df_cell = df %>% group_by(Clinical.stage) %>% summarise(mean = mean(AREG),N=length(AREG),
+                                                      sd = sd(AREG),se=sd/sqrt(N))
+
+df_sample = df %>% group_by(orig.ident) %>% summarise(AREG_sample = mean(AREG))
+df_sample = left_join(df_sample, df, by = "orig.ident")
+df_sample = df_sample %>% group_by(Clinical.stage) %>% summarise(mean = mean(AREG_sample),N=length(AREG_sample),
+                                                        sd = sd(AREG_sample),se=sd/sqrt(N))
+
+final1 = df_cell
+final1$group = "AREG"
+final = final1
+final$Clinical.stage = factor(final$Clinical.stage, levels = c("I","II","IIIA","IIIB","IVA","IVB"))
+p = ggplot(final,aes(Clinical.stage,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('M1_cell')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/M1_Cell_AREG", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+final1 = df_sample
+final1$group = "AREG"
+final = final1
+final$Clinical.stage = factor(final$Clinical.stage, levels = c("I","II","IIIA","IIIB","IVA","IVB"))
+p = ggplot(final,aes(Clinical.stage,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('M1_sample')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/M1_Sample_AREG", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+## Progression - DC4 AREG ####
+Myeloid_cell_DC <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/02_DC/Myeloid_cell_DC.RDS")
+
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo = PatientInfo[PatientInfo$NewSample.ID %in% unique(Myeloid_cell_DC@meta.data$orig.ident),]
+PatientInfo = left_join(PatientInfo,PatientInfo_surv,by="NewSample.ID")
+Myeloid_cell_DC@meta.data$NewSample.ID = Myeloid_cell_DC@meta.data$orig.ident
+temp = left_join(Myeloid_cell_DC@meta.data, PatientInfo, by = "NewSample.ID")
+identical(Myeloid_cell_DC@meta.data$orig.ident, temp$orig.ident)
+Myeloid_cell_DC@meta.data$histological.type.short = temp$histological.type.short
+Myeloid_cell_DC@meta.data$Tumors.for.scRNA.seq.short = temp$Tumors.for.scRNA.seq.short
+Myeloid_cell_DC@meta.data$metastasis.type = temp$metastasis.type
+Myeloid_cell_DC@meta.data$Clinical.stage = temp$Clinical.stage.x
+DC4 = subset(Myeloid_cell_DC, idents = "DC_C4_cDC2_PPP1R14A")
+
+expr = DC4
+df = FetchData(expr,vars = c('AREG','Clinical.stage','orig.ident','metastasis.type','Tumors.for.scRNA.seq.short','histological.type.short'))
+df = df[df$histological.type.short %in% c("adeno"),]
+df = df[df$Tumors.for.scRNA.seq.short %in% c("P"),]
+df$Clinical.stage = ifelse(df$Clinical.stage %in% c('IIA','IIB'),'II',df$Clinical.stage)
+df_DC4= df
+
+df_cell = df %>% group_by(Clinical.stage) %>% summarise(mean = mean(AREG),N=length(AREG),
+                                                        sd = sd(AREG),se=sd/sqrt(N))
+
+df_sample = df %>% group_by(orig.ident) %>% summarise(AREG_sample = mean(AREG))
+df_sample = left_join(df_sample, df, by = "orig.ident")
+df_sample = df_sample %>% group_by(Clinical.stage) %>% summarise(mean = mean(AREG_sample),N=length(AREG_sample),
+                                                                 sd = sd(AREG_sample),se=sd/sqrt(N))
+
+final1 = df_cell
+final1$group = "AREG"
+final = final1
+final$Clinical.stage = factor(final$Clinical.stage, levels = c("I","II","IIIA","IIIB","IVA","IVB"))
+p = ggplot(final,aes(Clinical.stage,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('DC4_cell')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/DC4_Cell_AREG", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+final1 = df_sample
+final1$group = "AREG"
+final = final1
+final$Clinical.stage = factor(final$Clinical.stage, levels = c("I","II","IIIA","IIIB","IVA","IVB"))
+p = ggplot(final,aes(Clinical.stage,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('DC4_sample')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/DC4_Sample_AREG", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+## Progression - N0 & N7 Percentage ####
+Myeloid_cell_Neu <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/01_Neutrophil/Myeloid_cell_Neu.RDS")
+Myeloid_cell_Neu$Subtype = Idents(Myeloid_cell_Neu)
+Myeloid_cell_Neu_SubMeta = subset(Myeloid_cell_Neu@meta.data, select = c('orig.ident','Subtype'))
+colnames(Myeloid_cell_Neu_SubMeta)[2] = "Subtype"
+
+myeloid_num = readRDS("./3 - GBC_output data_subtype/Trials/GBC_Myeloid_v3_output/myeloid_num_rmdoublets.RDS")
+cycle = unique(Myeloid_cell_Neu_SubMeta$orig.ident)
+myeloid_num = myeloid_num[cycle]
+identical(cycle,names(myeloid_num))
+
+Freq = c()
+for (i in 1:length(cycle)) {
+  sub = subset(Myeloid_cell_Neu_SubMeta, orig.ident == cycle[i])
+  Freq = bind_rows(Freq, round((table(sub$Subtype)/myeloid_num[i])*100,2))
+}
+Freq = as.data.frame(Freq)
+rownames(Freq) = cycle
+Freq[is.na(Freq)]=0
+
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_DC = PatientInfo[PatientInfo$X %in% rownames(Freq),]
+PatientInfo_DC = subset(PatientInfo_DC, select = c("NewSample.ID","Clinical.stage","histological.type.short","Tumors.for.scRNA.seq.short"))
+colnames(PatientInfo_DC)[1] = "Patient"
+Freq$Patient = rownames(Freq)
+PatientInfo_DC = left_join(PatientInfo_DC,Freq, by="Patient")
+
+PatientInfo_DC = PatientInfo_DC[PatientInfo_DC$histological.type.short %in% c("adeno"),]
+PatientInfo_DC = PatientInfo_DC[PatientInfo_DC$Tumors.for.scRNA.seq.short %in% c("P"),]
+PatientInfo_DC$Group = PatientInfo_DC$Clinical.stage
+PatientInfo_DC$Group = ifelse(PatientInfo_DC$Group %in% c("IIA","IIB"), "II", PatientInfo_DC$Group)
+
+PatientInfo_DC$Group = factor(PatientInfo_DC$Group, levels = c("I","II","IIIA","IIIB","IVA","IVB"))
+
+final1= PatientInfo_DC %>% group_by(Group) %>% summarise(mean = mean(N_C0_MNDA),N=length(N_C0_MNDA),
+                                                      sd = sd(N_C0_MNDA),se=sd/sqrt(N))
+final1$group = "N_C0_MNDA"
+final = final1
+p = ggplot(final,aes(Group,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('N_C0_MNDA')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/Pct_N0", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+final1= PatientInfo_DC %>% group_by(Group) %>% summarise(mean = mean(N_C1_ISG15),N=length(N_C1_ISG15),
+                                                                  sd = sd(N_C1_ISG15),se=sd/sqrt(N))
+final1$group = "N_C1_ISG15"
+final = final1
+p = ggplot(final,aes(Group,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('N_C1_ISG15')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/Pct_N1", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+final1= PatientInfo_DC %>% group_by(Group) %>% summarise(mean = mean(N_C2_CCL3L1),N=length(N_C2_CCL3L1),
+                                                                  sd = sd(N_C2_CCL3L1),se=sd/sqrt(N))
+final1$group = "N_C2_CCL3L1"
+final = final1
+p = ggplot(final,aes(Group,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('N_C2_CCL3L1')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/Pct_N2", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+final1= PatientInfo_DC %>% group_by(Group) %>% summarise(mean = mean(N_C7_MNDA_S100A8),N=length(N_C7_MNDA_S100A8),
+                                                                  sd = sd(N_C7_MNDA_S100A8),se=sd/sqrt(N))
+final1$group = "N_C7_MNDA_S100A8"
+final = final1
+p = ggplot(final,aes(Group,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('N_C7_MNDA_S100A8')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/Pct_N7", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+## Progression - Cor in Per sample ####
+temp = read.csv("./3 - GBC_output data_subtype/15_Progression_AREG story/MGS/AREG_CXCL5_Relationship.csv")
+
+df_M1= df_M1 %>% group_by(orig.ident) %>% summarise(mean = mean(AREG))
+colnames(df_M1)[2] = "M1_AREG"
+
+df_DC4= df_DC4 %>% group_by(orig.ident) %>% summarise(mean = mean(AREG))
+colnames(df_DC4)[2] = "DC4_AREG"
+
+colnames(PatientInfo_DC)[1] = "orig.ident"
+
+df_bind = left_join(df_M1, temp,by="orig.ident")
+df_bind = left_join(df_bind, df_DC4,by="orig.ident")
+df_bind = left_join(df_bind, PatientInfo_DC,by="orig.ident")
+df_bind = df_bind[,c(1,2,4,5,6,7,8,9,13,14,15,16)]
+
+df_bind$N_C0_MNDA = as.numeric(df_bind$N_C0_MNDA)
+df_bind$N_C1_ISG15 = as.numeric(df_bind$N_C1_ISG15)
+df_bind$N_C2_CCL3L1 = as.numeric(df_bind$N_C2_CCL3L1)
+df_bind$N_C7_MNDA_S100A8 = as.numeric(df_bind$N_C7_MNDA_S100A8)
+df_bind = df_bind[,-1]
+df_bind = df_bind[,c(2,3,4,1,7,5,6,8,9,10,11)]
+
+re = cor(df_bind, method = "spearman", use = "pairwise.complete.obs")
+testRes = corrplot::cor.mtest(df_bind,
+                    conf.level = 0.95,       # 置信区间
+                    method = "spearman")
+corrplot::corrplot(re,
+                   p.mat = testRes$p)
+
+## Progression - Cor - All AREG givers ####
+Myeloid_cell_MonoMacro <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/03_MM/Myeloid_cell_MonoMacro.RDS")
+
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo = PatientInfo[PatientInfo$NewSample.ID %in% unique(Myeloid_cell_MonoMacro@meta.data$orig.ident),]
+PatientInfo = left_join(PatientInfo,PatientInfo_surv,by="NewSample.ID")
+Myeloid_cell_MonoMacro@meta.data$NewSample.ID = Myeloid_cell_MonoMacro@meta.data$orig.ident
+temp = left_join(Myeloid_cell_MonoMacro@meta.data, PatientInfo, by = "NewSample.ID")
+identical(Myeloid_cell_MonoMacro@meta.data$orig.ident, temp$orig.ident)
+Myeloid_cell_MonoMacro@meta.data$histological.type.short = temp$histological.type.short
+Myeloid_cell_MonoMacro@meta.data$Tumors.for.scRNA.seq.short = temp$Tumors.for.scRNA.seq.short
+Myeloid_cell_MonoMacro@meta.data$metastasis.type = temp$metastasis.type
+Myeloid_cell_MonoMacro@meta.data$Clinical.stage = temp$Clinical.stage.x
+M1 = subset(Myeloid_cell_MonoMacro, idents = "M_C1_S100A8")
+
+expr = M1
+df = FetchData(expr,vars = c('AREG','Clinical.stage','orig.ident','metastasis.type','Tumors.for.scRNA.seq.short','histological.type.short'))
+df = df[df$histological.type.short %in% c("adeno"),]
+df = df[df$Tumors.for.scRNA.seq.short %in% c("P"),]
+df = df[!(df$histological.type.short %in% c("CC","XGC","HG","LG")),]
+df$Clinical.stage = ifelse(df$Clinical.stage %in% c('IIA','IIB'),'II',df$Clinical.stage)
+df_M1 = df
+
+##
+Myeloid_cell_DC <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/02_DC/Myeloid_cell_DC.RDS")
+
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo = PatientInfo[PatientInfo$NewSample.ID %in% unique(Myeloid_cell_DC@meta.data$orig.ident),]
+PatientInfo = left_join(PatientInfo,PatientInfo_surv,by="NewSample.ID")
+Myeloid_cell_DC@meta.data$NewSample.ID = Myeloid_cell_DC@meta.data$orig.ident
+temp = left_join(Myeloid_cell_DC@meta.data, PatientInfo, by = "NewSample.ID")
+identical(Myeloid_cell_DC@meta.data$orig.ident, temp$orig.ident)
+Myeloid_cell_DC@meta.data$histological.type.short = temp$histological.type.short
+Myeloid_cell_DC@meta.data$Tumors.for.scRNA.seq.short = temp$Tumors.for.scRNA.seq.short
+Myeloid_cell_DC@meta.data$metastasis.type = temp$metastasis.type
+Myeloid_cell_DC@meta.data$Clinical.stage = temp$Clinical.stage.x
+DC4 = subset(Myeloid_cell_DC, idents = "DC_C4_cDC2_PPP1R14A")
+
+expr = DC4
+df = FetchData(expr,vars = c('AREG','Clinical.stage','orig.ident','metastasis.type','Tumors.for.scRNA.seq.short','histological.type.short'))
+df = df[df$histological.type.short %in% c("adeno"),]
+df = df[df$Tumors.for.scRNA.seq.short %in% c("P"),]
+df = df[!(df$histological.type.short %in% c("CC","XGC","HG","LG")),]
+df$Clinical.stage = ifelse(df$Clinical.stage %in% c('IIA','IIB'),'II',df$Clinical.stage)
+df_DC4= df
+
+##
+sampleInfo <- read.csv("./3 - GBC_output data_subtype/15_Progression_AREG story/MGS/GBC_SampleInfo.csv")
+sampleInfo <- sampleInfo[sampleInfo$Tumors.for.scRNA.seq.short == "P" & sampleInfo$histological.type.short == "adeno",]
+sampleInfo <- sampleInfo[,c(1,9)]
+colnames(sampleInfo) <- c("orig.ident","Clinical.stage")
+
+CD4_naive <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/15_Progression_AREG story/MGS/CD4_naive.rds")
+AREG <- FetchData(object = CD4_naive, vars = c("AREG", "orig.ident"))
+AREG <- merge(AREG,sampleInfo,by="orig.ident")
+AREG$Clinical.stage <- gsub("^IIA$","II", AREG$Clinical.stage)
+AREG$Clinical.stage <- gsub("^IIB$","II", AREG$Clinical.stage)
+df_CD4_naive= AREG
+
+B_C0 <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/15_Progression_AREG story/MGS/B_C0.rds")
+AREG <- FetchData(object = B_C0, vars = c("AREG", "orig.ident"))
+AREG <- merge(AREG,sampleInfo,by="orig.ident")
+AREG$Clinical.stage <- gsub("^IIA$","II", AREG$Clinical.stage)
+AREG$Clinical.stage <- gsub("^IIB$","II", AREG$Clinical.stage)
+df_B_C0= AREG
+
+CD8_C0 <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/15_Progression_AREG story/MGS/CD8_C0.rds")
+AREG <- FetchData(object = CD8_C0, vars = c("AREG", "orig.ident"))
+AREG <- merge(AREG,sampleInfo,by="orig.ident")
+AREG$Clinical.stage <- gsub("^IIA$","II", AREG$Clinical.stage)
+AREG$Clinical.stage <- gsub("^IIB$","II", AREG$Clinical.stage)
+df_CD8_C0= AREG
+
+df_DC4 = df_DC4[,c(1:3)]
+df_M1 = df_M1[,c(1:3)]
+df_DC4 = df_DC4[,c(3,1,2)]
+df_M1 = df_M1[,c(3,1,2)]
+
+df = rbind(df_M1,df_DC4,df_CD4_naive,df_B_C0,df_CD8_C0)
+
+final1= df %>% group_by(Clinical.stage) %>% summarise(mean = mean(AREG),N=length(AREG),
+                                                      sd = sd(AREG),se=sd/sqrt(N))
+df_M1 = df
+final1$group = "AREG"
+final = final1
+final$Clinical.stage = factor(final$Clinical.stage, levels = c("I","II","IIIA","IIIB","IVA","IVB"))
+p = ggplot(final,aes(Clinical.stage,mean,group = group))+
+  geom_ribbon(aes(ymin=mean-se,ymax=mean+se),fill='#e3e3e3')+
+  #geom_line(color=c('#B7916C'),size=1)+
+  #geom_point(color='#B7916C',size=2)+
+  geom_line(aes(color=group),size=1)+
+  geom_point(color='#B7916C',size=2)+
+  facet_grid(.~group)+
+  theme(panel.background = element_blank(),
+        panel.grid = element_line(color="white"),
+        # axis.title = element_blank(),
+        #axis.ticks = element_blank(),
+        axis.text.x=element_text(colour='black',size=12,angle = 45,hjust = 1))+
+  ggtitle('ALL')+theme(axis.line=element_line(colour='black',size=1,lineend = 'square'))+
+  theme (axis.text.x = element_text (colour='black', size=12, angle=45), 
+         axis.text.y = element_text (colour='black',size=12, angle=45))+
+  labs(x='Stage',y='Score')
+
+pdf(file = paste0("./3 - GBC_output data_subtype/15_Progression_AREG story/ALL_AREG", ".pdf"), width =5, height = 5) #
+print(p)
+dev.off()
+
+## Cor - ALL
+temp = read.csv("./3 - GBC_output data_subtype/15_Progression_AREG story/MGS/AREG_CXCL5_Relationship.csv")
+df_1= df %>% group_by(orig.ident) %>% summarise(mean = mean(AREG))
+df_bind = left_join(df_1, PatientInfo_DC,by="orig.ident")
+df_bind = left_join(df_bind, temp,by="orig.ident")
+df_bind = df_bind[,c(1,2,6,7,8,9,16,17)]
+
+df_bind$N_C0_MNDA = as.numeric(df_bind$N_C0_MNDA)
+df_bind$N_C1_ISG15 = as.numeric(df_bind$N_C1_ISG15)
+df_bind$N_C2_CCL3L1 = as.numeric(df_bind$N_C2_CCL3L1)
+df_bind$N_C7_MNDA_S100A8 = as.numeric(df_bind$N_C7_MNDA_S100A8)
+df_bind = df_bind[,-1]
+df_bind = df_bind[,c(1,6,7,2,3,4,5)]
+
+re = cor(df_bind, method = "spearman", use = "pairwise.complete.obs")
+testRes = corrplot::cor.mtest(df_bind,
+                              conf.level = 0.95,       # 置信区间
+                              method = "spearman")
+corrplot::corrplot(re,
+                   p.mat = testRes$p)
+
+## Upstream of AREG ####
+##
+library(clusterProfiler)
+Myeloid_cell_MonoMacro <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/03_MM/Myeloid_cell_MonoMacro.RDS")
+Myeloid_cell_MonoMacro_M1DEG <- FindMarkers(Myeloid_cell_MonoMacro, ident.1 = "M_C1_S100A8", only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
+Myeloid_cell_MonoMacro_M1DEG = Myeloid_cell_MonoMacro_M1DEG[Myeloid_cell_MonoMacro_M1DEG$p_val_adj < 0.05,]
+
+naiveMarkers <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/16_Upstream of AREG/MGS/naiveMarkers.rds")
+naiveMarkers = naiveMarkers[naiveMarkers$p_val_adj < 0.05,]
+intersect(x = rownames(Myeloid_cell_MonoMacro_M1DEG), y = rownames(naiveMarkers))
+
+####
+Myeloid_cell_MonoMacro_M1DEG$gene = rownames(Myeloid_cell_MonoMacro_M1DEG)
+temp <- bitr(Myeloid_cell_MonoMacro_M1DEG$gene,fromType = 'SYMBOL',
+             toType = 'ENTREZID',
+             OrgDb='org.Hs.eg.db')
+Myeloid_cell_MonoMacro_M1DEG = Myeloid_cell_MonoMacro_M1DEG[temp$SYMBOL,]
+Myeloid_cell_MonoMacro_M1DEG$gene = temp$ENTREZID
+ego1 <- enrichGO(rownames(Myeloid_cell_MonoMacro_M1DEG), 
+                  OrgDb=org.Hs.eg.db, 
+                  ont='BP',
+                  pAdjustMethod='BH', 
+                  pvalueCutoff=0.05,
+                  qvalueCutoff=0.2, 
+                  keyType='SYMBOL')
+dotplot(ego1, showCategory = 10) +
+  #coord_flip() +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5,size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.title.y = element_blank(),
+        legend.direction = "vertical",
+        legend.position = "right",
+        legend.box = "horizontal")
+
+####
+naiveMarkers$gene = rownames(naiveMarkers)
+temp <- bitr(naiveMarkers$gene,fromType = 'SYMBOL',
+             toType = 'ENTREZID',
+             OrgDb='org.Hs.eg.db')
+naiveMarkers = naiveMarkers[temp$SYMBOL,]
+naiveMarkers$gene = temp$ENTREZID
+ego2 <- enrichGO(rownames(naiveMarkers), 
+                 OrgDb=org.Hs.eg.db, 
+                 ont='BP',
+                 pAdjustMethod='BH', 
+                 pvalueCutoff=0.05,
+                 qvalueCutoff=0.2, 
+                 keyType='SYMBOL')
+dotplot(ego2, showCategory = 10) +
+  #coord_flip() +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5,size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.title.y = element_blank(),
+        legend.direction = "vertical",
+        legend.position = "right",
+        legend.box = "horizontal")
+
+
+## 
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo = PatientInfo[PatientInfo$NewSample.ID %in% unique(Myeloid_cell_MonoMacro@meta.data$orig.ident),]
+PatientInfo = left_join(PatientInfo,PatientInfo_surv,by="NewSample.ID")
+Myeloid_cell_MonoMacro@meta.data$NewSample.ID = Myeloid_cell_MonoMacro@meta.data$orig.ident
+temp = left_join(Myeloid_cell_MonoMacro@meta.data, PatientInfo, by = "NewSample.ID")
+identical(Myeloid_cell_MonoMacro@meta.data$orig.ident, temp$orig.ident)
+Myeloid_cell_MonoMacro@meta.data$histological.type.short = temp$histological.type.short
+Myeloid_cell_MonoMacro@meta.data$Tumors.for.scRNA.seq.short = temp$Tumors.for.scRNA.seq.short
+Myeloid_cell_MonoMacro@meta.data$metastasis.type = temp$metastasis.type
+Myeloid_cell_MonoMacro@meta.data$Clinical.stage = temp$Clinical.stage.x
+M1 = subset(Myeloid_cell_MonoMacro, idents = "M_C1_S100A8")
+
+df = FetchData(M1,vars = c('AREG','Clinical.stage','orig.ident','metastasis.type','Tumors.for.scRNA.seq.short','histological.type.short'))
+df$AREG_group = ifelse(df$AREG>0, "AREG_pos","AREG_neg")
+identical(rownames(df), rownames(M1@meta.data))
+M1@meta.data$AREG_group = df$AREG_group
+Idents(M1) = M1$AREG_group
+M1DEG <- FindMarkers(M1, ident.1 = "AREG_pos", only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
+
+##
+Myeloid_cell_DC <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/02_DC/Myeloid_cell_DC.RDS")
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_surv = openxlsx::read.xlsx("./1 - GBC_input data/GBC样本整理信息20220411_预后.xlsx")
+PatientInfo = PatientInfo[PatientInfo$NewSample.ID %in% unique(Myeloid_cell_DC@meta.data$orig.ident),]
+PatientInfo = left_join(PatientInfo,PatientInfo_surv,by="NewSample.ID")
+Myeloid_cell_DC@meta.data$NewSample.ID = Myeloid_cell_DC@meta.data$orig.ident
+temp = left_join(Myeloid_cell_DC@meta.data, PatientInfo, by = "NewSample.ID")
+identical(Myeloid_cell_DC@meta.data$orig.ident, temp$orig.ident)
+Myeloid_cell_DC@meta.data$histological.type.short = temp$histological.type.short
+Myeloid_cell_DC@meta.data$Tumors.for.scRNA.seq.short = temp$Tumors.for.scRNA.seq.short
+Myeloid_cell_DC@meta.data$metastasis.type = temp$metastasis.type
+Myeloid_cell_DC@meta.data$Clinical.stage = temp$Clinical.stage.x
+DC4 = subset(Myeloid_cell_DC, idents = "DC_C4_cDC2_PPP1R14A")
+
+df = FetchData(DC4,vars = c('AREG','Clinical.stage','orig.ident','metastasis.type','Tumors.for.scRNA.seq.short','histological.type.short'))
+df$AREG_group = ifelse(df$AREG>0, "AREG_pos","AREG_neg")
+identical(rownames(df), rownames(DC4@meta.data))
+DC4@meta.data$AREG_group = df$AREG_group
+Idents(DC4) = DC4$AREG_group
+DC4DEG <- FindMarkers(DC4, ident.1 = "AREG_pos", only.pos = T, min.pct = 0.25, logfc.threshold = 0.25)
+
+intersect_DEG0 = intersect(rownames(M1DEG),rownames(DC4DEG))
+
+##
+CD4naive_CD8C0_BC0_Intersect <- readRDS("D:/OneDrive/NMU_Postdoc/Project_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/16_Upstream of AREG/MGS/CD4naive_CD8C0_BC0_Intersect.rds")
+CD4naive = CD4naive_CD8C0_BC0_Intersect[[1]]
+CD4naive = CD4naive[CD4naive$p_val_adj < 0.05,]
+CD8_C0 = CD4naive_CD8C0_BC0_Intersect[[2]]
+CD8_C0 = CD8_C0[CD8_C0$p_val_adj < 0.05,]
+B_C0 = CD4naive_CD8C0_BC0_Intersect[[3]]
+B_C0 = B_C0[B_C0$p_val_adj < 0.05,]
+
+intersect_DEG1 = intersect(rownames(CD4naive),rownames(CD8_C0))
+intersect_DEG = intersect(intersect_DEG1,rownames(B_C0))
+
+intersect_DEG = intersect(intersect_DEG,intersect_DEG0)
+
+DimPlot(Myeloid_cell_MonoMacro)
 
 
 
 
+
+
+
+
+
+# Fig 7a ####
+Fibroblast_new2 <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/Fibroblast/Fibroblast_new2.RDS")
+Fb = subset(Fibroblast_new2, idents = c("F_C1_CFD", "Per_C1_MYH11", "Per_C3_STEAP4"))
+
+Endothelium <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/04_Endothelium/Endothelium.RDS")
+Endo = subset(Endothelium, idents = c("EC_C0_ACKR1", "EC_C5_PROX1", "EC_C3_GJA5"))
+
+Myeloid_cell_DC <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/Trials/GBC_Myeloid_v3_output/Myeloid_cell_DC.RDS")
+DC = subset(Myeloid_cell_DC, idents = c(4))
+Idents(DC) = "DC_C4_PPP1R14A_cDC2"
+
+Myeloid_cell_MonoMacro <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/Trials/GBC_Myeloid_v3_output/Myeloid_cell_MonoMacro.RDS")
+MM = subset(Myeloid_cell_MonoMacro, idents = c(1))
+Idents(MM) = "M_C1_S100A8"
+
+Myeloid_cell_Neu <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/Trials/GBC_Myeloid_v3_output/Myeloid_cell_Neu.RDS")
+Neu = subset(Myeloid_cell_Neu, idents = c(0,1,2,7))
+
+CD4 <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/18_Fig7a/01 CD4.rds")
+CD4 = subset(CD4, idents = c("CD4T_C2_CCR7"))
+
+CD8 <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/18_Fig7a/02 CD8.rds")
+CD8 = subset(CD8, idents = c("CD8T_C0_CCR7_GZMK"))
+
+B <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/3 - GBC_output data_subtype/18_Fig7a/04 B cells.rds")
+B = subset(B, idents = c("B_C0_IGHA1"))
+
+# Epithelial <- readRDS("D:/OneDrive/NCLC/1 - Project_220101_GBC/2 - Analysis_V3_checked/1 - GBC_input data/Epithelial.RDS")
+# GBC_AllSubtype <- read.csv("./4 - Cooperation/WYH/All Subtype Info/celltype_info_all_filter_final.csv")
+# cell_ids <- GBC_AllSubtype[GBC_AllSubtype$subtype %in% "GM16",]$cellid
+# Epithelial <- subset(Epithelial, cells = cell_ids)
+# Idents(Epithelial) <- "GM16"
+
+AREG_Subtype = merge(Fb, y = c(Endo, DC, MM, Neu, CD4, CD8, B))
+# saveRDS(AREG_Subtype, file = "./3 - GBC_output data_subtype/18_Fig7a/AREG_Subtype.RDS")
+
+# AREG_Subtype <- ScaleData(AREG_Subtype)
+
+p = DotPlot(AREG_Subtype, features = "AREG",  cols = c("lightgrey", "#f0504a"))  +
+  #coord_flip() +
+  theme(axis.text.x = element_text(angle = -90,hjust = 0,vjust = 0.5)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.title.y = element_blank())
+pdf(file = "./3 - GBC_output data_subtype/18_Fig7a/AREG_Subtype.pdf", width =5, height = 5)
+print(p)
+dev.off()
+
+
+
+
+
+# Entropy ####
+GBC_AllSubtype <- read.csv("./4 - Cooperation/WYH/All Subtype Info/celltype_info_all_filter_final.csv")
+GBC_TIMESubtype = GBC_AllSubtype[!(GBC_AllSubtype$celltype %in% c("tumor","normal","Mast")),]
+PatientInfo = readRDS("./1 - GBC_input data/PatientInfo.Rds")
+PatientInfo_DC = PatientInfo[PatientInfo$X %in% unique(GBC_TIMESubtype$orig.ident),]
+
+GBC_TIMESubtype = GBC_TIMESubtype[GBC_TIMESubtype$orig.ident %in% PatientInfo_DC$X,]
+Freq = c()
+cycle = unique(GBC_TIMESubtype$subtype)
+for (i in 1:length(cycle)) {
+  sub = subset(GBC_TIMESubtype, subtype == cycle[i])
+  Freq = bind_rows(Freq, round((table(sub$orig.ident)/nrow(sub)),4))
+}
+Freq = as.data.frame(Freq)
+rownames(Freq) = cycle
+Freq[is.na(Freq)]=0
+
+temp = as.data.frame(sort(apply(Freq, 1, max)))
+temp$X = rownames(temp)
+
+subtype = read.csv("./3 - GBC_output data_subtype/ToLS_Shanno/Subtype_Entropy_230613.csv", row.names = 1)
+subtype$X = ifelse(subtype$X == "F_C12_ACTG2", "F_C10_ACTG2", 
+                   ifelse(subtype$X == "F_C13_APOD", "F_C11_APOD",
+                          ifelse(subtype$X == "F_C10_MT1X", "F_C8_MT1X",
+                                 ifelse(subtype$X == "F_C11_S100B", "F_C9_S100B",
+                                        ifelse(subtype$X == "F_C14_VCAN", "Per_C2_VCAN",
+                                               ifelse(subtype$X == "F_C15_STEAP4", "Per_C3_STEAP4",
+                                                      ifelse(subtype$X == "F_C2_RGS5", "Per_C0_RGS5",
+                                                             ifelse(subtype$X == "F_C3_COLEC11", "F_C2_COLEC11",
+                                                                    ifelse(subtype$X == "F_C4_MYH11", "Per_C1_MYH11",
+                                                                           ifelse(subtype$X == "F_C5_IGFBP2", "F_C3_IGFBP2",
+                                                                                  ifelse(subtype$X == "F_C6_CCN5", "F_C4_CCN5"）
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+                                                                                         
+      
