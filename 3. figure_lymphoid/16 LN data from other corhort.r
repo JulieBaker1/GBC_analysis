@@ -35,10 +35,8 @@ data2<-data2[!duplicated(data2$Gene, fromLast=TRUE), ]
 rownames(data2)=data2$Gene
 data2 = data2[,-c(1,2)]
 
-
 obj.2 = CreateSeuratObject(counts = data2, project = 'LN Donor 2')
 obj.2 <- NormalizeData(obj.2)
-
 obj.2 <- FindVariableFeatures(obj.2, selection.method = "vst", nfeatures = 2000)
 obj.2 <- ScaleData(object = obj.2)
 
@@ -54,7 +52,6 @@ DimPlot(obj.2,reduction = 'umap',label = TRUE,group.by = 'seurat_clusters')
 marker = FindAllMarkers(obj.2,only.pos = TRUE)
 
 donor = merge(obj.1,obj.2,add.cell.ids =c('LN_1','LN_2'))
-
 donor <- FindVariableFeatures(donor, selection.method = "vst", nfeatures = 2000)
 donor <- ScaleData(object = donor)
 PCS = 30

@@ -74,14 +74,14 @@ b.s=shang.value
 pc.s=shang.value
 
 total.entropy = rbind(cd8.s,cd4.s,nk.s,b.s,pc.s)
-total.entropy$group=case_when(total.entropy$a >=0.65~'High Shanno Value',
-                              total.entropy$a <0.65 ~ 'Low Shanno Value')
-total.entropy$color=case_when(total.entropy$a >=0.65~'darkred',
-                              total.entropy$a < 0.65 ~ 'gray')
+total.entropy$group=case_when(total.entropy$a >=0.625~'High Shanno Value',
+                              total.entropy$a <0.625 ~ 'Low Shanno Value')
+total.entropy$color=case_when(total.entropy$a >=0.625~'darkred',
+                              total.entropy$a < 0.625 ~ 'gray')
 
 a=ggplot(total.entropy, aes(x=Cluster,y=a,fill=group)) +  
   geom_col()+
-  geom_hline(aes(yintercept=0.65), size=1.5,colour="black", linetype="dashed")+
+  geom_hline(aes(yintercept=0.625), size=1.5,colour="black", linetype="dashed")+
   theme(axis.line=element_line(colour='black',size=1,lineend = 'square'),
         axis.text.y = element_text(size = 12),
         axis.text.x = element_text(size = 12,colour = total.entropy$color,angle=60,hjust = 1),

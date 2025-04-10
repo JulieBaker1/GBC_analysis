@@ -56,10 +56,10 @@ a=DotPlot(pc.sub, features = unique(top50$gene))  +
   theme(axis.title.y = element_blank())
 
 
-### Figure 4F
-cd4= readRDS('D:\\GBC\\03 CD4\\01 矩阵RDS\\cd4_newname.rds')
+
+cd4= readRDS('...\\cd4_newname.rds')
 cd4 = subset(cd4,seurat_clusters == 2)
-marker = readRDS('D:\\GBC\\18 Final Final code file\\04 Differential Genes\\02 CD4 markers.rds')
+marker = readRDS('...\\02 CD4 markers.rds')
 sub.marker = subset(marker,cluster ==2)
 features = c(top_n(sub.marker,5,avg_log2FC)$gene,'SELL','TCF7','LEF1','IL7R')
 a=DotPlot(cd4,features = features)+scale_size(range = c(3, 10))+

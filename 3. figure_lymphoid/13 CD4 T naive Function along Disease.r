@@ -113,7 +113,6 @@ for (i in c(1:21)){
 ###Pheatmap
 
 df_filter = df_filter %>% group_by(clinical.stage) %>% summarise_each(funs = median)
-
 df_filter = as.data.frame(df_filter)
 rownames(df_filter) = df_filter$clinical.stage
 df_filter = df_filter[,-1]
